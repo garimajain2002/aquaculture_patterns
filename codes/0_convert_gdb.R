@@ -1,7 +1,14 @@
+# Convert district .gdb layers to shape files 
+
 # Load required libraries
 library(sf)
-library(arcgisbinding)  # For reading .gdb files
-library(dplyr)
+
+gdb_path <- "C:\\Users\\garim\\Desktop\\ArcGISPro\\Ch1\\Ch1_Patterns\\Ch1_Patterns.gdb"
+output_dir <- "C:\\Users\\garim\\Desktop\\ArcGISPro\\Ch1\\Ch1_Patterns\\Ch1_shapefiles"
+
+layers <- st_layers(gdb_path)
+print(layers)
+
 
 convert_gdb_to_shp <- function(gdb_path, output_dir) {
   # Create output directory if it doesn't exist
@@ -9,28 +16,19 @@ convert_gdb_to_shp <- function(gdb_path, output_dir) {
     dir.create(output_dir, recursive = TRUE)
   }
   
-  # Initialize ArcGIS binding
-  arc.check_product()
-  
-  # List all feature classes in the geodatabase
-  gdb_layers <- arc.open(gdb_path) %>%
-    arc.features() %>%
-    names()
+  # List all layers in the geodatabase using sf
+  gdb_layers <- st_layers(gdb_path)
+  layer_names <- gdb_layers$name
   
   # Print initial status
-  cat(sprintf("Found %d layers in the geodatabase\n", length(gdb_layers)))
+  cat(sprintf("Found %d layers in the geodatabase\n", length(layer_names)))
   
   # Process each layer
-  for (layer_name in gdb_layers) {
+  for (layer_name in layer_names) {
     tryCatch({
-      # Construct the full path to the feature class
-      feature_path <- file.path(gdb_path, layer_name)
-      
-      # Read the feature class
+      # Read the layer using sf
       cat(sprintf("Processing %s...\n", layer_name))
-      layer_data <- arc.open(feature_path) %>%
-        arc.select() %>%
-        arc.data2sf()
+      layer_data <- st_read(dsn = gdb_path, layer = layer_name)
       
       # Clean layer name for file naming
       clean_name <- gsub("[^[:alnum:]]", "_", layer_name)
@@ -47,3 +45,6 @@ convert_gdb_to_shp <- function(gdb_path, output_dir) {
   
   cat("\nConversion complete!\n")
 }
+
+
+convert_gdb_to_shp(gdb_path, output_dir)
