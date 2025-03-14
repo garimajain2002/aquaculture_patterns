@@ -1,0 +1,11 @@
+Processing started at 2025-03-13 23:27:01 
+ Using 2 cores out of 2 available
+ Total tasks: 273 
+
+ Processing complete in 28.6 minutes!
+2 successful, 0 skipped, 3 failed out of 5 total tasks (40.0% success rate) 
+Processing finished at 2025-03-13 23:55:41 
+
+Detailed processing results saved to: task_results_summary.csv
+Created summary file with all results: outputs/all_districts_salinity_summary.csv
+Peak memory usage: 1516345753.60 MB

@@ -1,0 +1,6 @@
+"state_code","dist_code","year","status","error_message"
+"AP",1,2013,"SUCCESS",NA
+"AP",1,2014,"ERROR","error in evaluating the argument 'x' in selecting a method for function 'as.data.frame': 'R_Calloc' could not allocate memory (7407097 of 16 bytes)"
+"AP",1,2015,"SUCCESS",NA
+"AP",1,2016,"ERROR","cannot allocate vector of size 1.4 Gb"
+"AP",1,2017,"ERROR","cannot allocate vector of size 56.5 Mb"
