@@ -1,0 +1,38 @@
+R warnings during salinity area calculations. Check Done - They exist in the final csv: 
+
+Successfully processed 337 out of 351 combinations (96.0%) (following is 13 of the 14 missing details - check before OD_3_2017 for another missing)
+
+Processing OD_3 for year 2024
+Output for OD_3_2024 already exists, skipping.
+Processing OD_3 for year 2025
+Output for OD_3_2025 already exists, skipping.
+
+Processing OD_4 for year 2024
+Output for OD_4_2024 already exists, skipping.
+Processing OD_4 for year 2025
+Output for OD_4_2025 already exists, skipping.
+
+Processing OD_5 for year 2024
+Output for OD_5_2024 already exists, skipping.
+Processing OD_5 for year 2025
+Output for OD_5_2025 already exists, skipping.
+
+Processing OD_6 for year 2024
+Output for OD_6_2024 already exists, skipping.
+Processing OD_6 for year 2025
+Output for OD_6_2025 already exists, skipping.
+Processing AP_1 for year 2013
+Output for AP_1_2013 already exists, skipping.
+
+Processing AP_1 for year 2015
+Output for AP_1_2015 already exists, skipping.
+
+Other errors logged (check log files and redo as needed): 
+AP_1_2014 : Error: error in evaluating the argument 'x' in selecting a method for function 'as.data.frame': 'R_Calloc' could not allocate memory (7407097 of 16 bytes)
+AP_1_2016 : Error: cannot allocate vector of size 1.4 Gb
+AP_1_2017 : Error: cannot allocate vector of size 56.5 Mb 
+
+
+
+
+

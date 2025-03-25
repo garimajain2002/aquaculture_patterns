@@ -19,20 +19,20 @@ best_threshold = 0.475
 
 # Define state and district codes 
 # # ALL
-# state_codes <- c("OD", "AP", "TN")
-# districts <- list(
-#   OD = 1:6,
-#   AP = 1:9,
-#   TN = 1:12
-# )
-# years <- 2013:2025
-
-# TEST
-state_codes <- c("OD")
+state_codes <- c("OD", "AP", "TN")
 districts <- list(
-  OD = 1:6
+  OD = 1:6,
+  AP = 1:9,
+  TN = 1:12
 )
 years <- 2013:2025
+
+# # TEST
+# state_codes <- c("OD")
+# districts <- list(
+#   OD = 1:6
+# )
+# years <- 2024:2025
 
 # Create output directory if it doesn't exist
 dir.create("outputs", showWarnings = FALSE)
@@ -327,3 +327,4 @@ if (length(results_files) > 0) {
   cat("Created summary file with all results: outputs/all_districts_salinity_summary.csv\n", 
       file = log_file, append = TRUE)
 }
+

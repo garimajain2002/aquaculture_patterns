@@ -1,0 +1,9 @@
+Variable,est,se,Controls
+Surge,6.035,0.196,OLS + Interaction
+Surge,11.032,1.178,FE (State + Sea Distance)
+Saline Area,0.476,0.015,OLS + Interaction
+Saline Area,0.278,0.114,FE (State + Sea Distance)
+Surge,5.864,0.196,Persistent Salinity (OLS + Interaction)
+Surge,10.802,1.055,Persistent Salinity (FE)
+Salinity (5 yrs),0.272,0.011,Persistent Salinity (OLS + Interaction)
+Salinity (5 yrs),0.323,0.153,Persistent Salinity (FE)
