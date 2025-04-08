@@ -255,14 +255,14 @@ a1$Controls<-as.factor(a1$Controls)
 # This is the plot with the horizontal lines
 plot<-ggplot(a1,aes(est,Variable,group=Controls))+
   geom_errorbarh(aes(xmax = upr, xmin = lwr),height=0.5,position=position_dodge(width=0.5), colour="black")+
-  geom_point(size=4, aes(shape=Controls,color=Controls),position=position_dodge(width=0.5))+
+  geom_point(size=5, aes(shape=Controls,color=Controls),position=position_dodge(width=0.5))+
   theme_bw()+
   ggtitle("Relationship between Aquaculture, Surge & Salinity across model specs")+
   ylab("")+   theme(legend.position="right")+
   theme(legend.text = element_text(size = 12),legend.title = element_text(size = 12))+
   theme(plot.title = element_text(hjust = 0.5),panel.border = element_rect(colour = "black",linewidth=1))+
-  theme(axis.title = element_text(size = 12,face="bold"),axis.text=element_text(size=12,color="black"))+
-  theme(plot.title = element_text(size = 12,face = "bold"))+xlab("") +
+  theme(axis.title = element_text(size = 16,face="bold"),axis.text=element_text(size=16,color="black"))+
+  theme(plot.title = element_text(size = 16,face = "bold"))+xlab("") +
   theme(panel.grid.major = element_line(colour="grey", linewidth=0.5)) +
   theme(panel.grid.minor = element_line(colour="grey", linewidth=0.5))+
   theme(panel.grid.minor = element_blank(),

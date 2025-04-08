@@ -16,7 +16,7 @@ df_2017 <- read.csv(unz("outputs/2017_JSP_predicted_ECAqua_df.zip","2017_JSP_pre
 df_2021 <- read.csv(unz("outputs/2021_JSP_predicted_ECAqua_df.zip","2021_JSP_predicted_ECAqua_df.csv" ))
 df_2024 <- read.csv(unz("outputs/2024_JSP_predicted_ECAqua_df.zip","2024_JSP_predicted_ECAqua_df.csv" ))
 
-# Calculate area under quaculture and salinity - convert from 30mx30m cell to sq. km 
+# Calculate area under aquaculture and salinity - convert from 30mx30m cell to sq. km 
 aqua_1995 <- sum(df_1995$predicted_EC==2, na.rm=TRUE)*0.0009
 saline_1995 <- sum(df_1995$predicted_EC==1, na.rm=TRUE)*0.0009
 

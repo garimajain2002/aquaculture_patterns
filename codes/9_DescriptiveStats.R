@@ -163,7 +163,7 @@ ggplot(yearly_summary) +
   
   theme_minimal()
 
-ggsave("outputs/Stormwise_aquaTrends_2013-25_allVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_aquaTrends_2013-25_allVillages.png", width = 10, height = 6, dpi = 300)
 
 # Visualize salinity trends over time for affected and not affected villages
 ggplot(yearly_summary, aes(x=factor(Year))) +
@@ -179,7 +179,7 @@ ggplot(yearly_summary, aes(x=factor(Year))) +
   labs(title = "Average Saline Area Percentage by Year (Affected vs. Not Affected)",
        x = "Year", y = "Average Saline Area (%)", color = "Storm Impact", fill = "Storm Impact") +
   theme_minimal()
-ggsave("outputs/Stormwise_salinityTrends_2013-25_allVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_salinityTrends_2013-25_allVillages.png", width = 10, height = 6, dpi = 300)
 
 
 
@@ -287,7 +287,7 @@ ggplot(yearly_summary) +
   scale_fill_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
   
   theme_minimal()
-ggsave("outputs/Stormwise_aquaTrends_2013-25_nearVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_aquaTrends_2013-25_nearVillages.png", width = 10, height = 6, dpi = 300)
 
 # Visualize salinity trends over time for affected and not affected villages
 ggplot(yearly_summary, aes(x=factor(Year))) +
@@ -303,7 +303,7 @@ ggplot(yearly_summary, aes(x=factor(Year))) +
   labs(title = "Average Saline Area Percentage for Villages less than 60km from the sea",
        x = "Year", y = "Average Saline Area (%)", color = "Storm Impact", fill = "Storm Impact") +
   theme_minimal()
-ggsave("outputs/Stormwise_salinityTrends_2013-25_nearVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_salinityTrends_2013-25_nearVillages.png", width = 10, height = 6, dpi = 300)
 
 
 # VERY NEAR VILLAGES (<30 km from the sea) 
@@ -408,7 +408,7 @@ ggplot(yearly_summary) +
   scale_fill_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
   
   theme_minimal()
-ggsave("outputs/Stormwise_aquaTrends_2013-25_verynearVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_aquaTrends_2013-25_verynearVillages.png", width = 10, height = 6, dpi = 300)
 
 
 # Visualize salinity trends over time for affected and not affected villages
@@ -426,7 +426,7 @@ ggplot(yearly_summary, aes(x=factor(Year))) +
        x = "Year", y = "Average Saline Area (%)", color = "Storm Impact", fill = "Storm Impact") +
   theme_minimal()
 
-ggsave("outputs/Stormwise_salinityTrends_2013-25_verynearVillages.png", width = 8, height = 6, dpi = 300)
+ggsave("outputs/Stormwise_salinityTrends_2013-25_verynearVillages.png", width = 10, height = 6, dpi = 300)
 
 
 
