@@ -1,6 +1,6 @@
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #+ Model Salinity for all villages in all years and calculate areas
-#+ Parallelized version for multicore environments
+#+ Parallelized version for a multicore environment
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 library(raster)
@@ -30,20 +30,20 @@ best_threshold = 0.475
 
 # Define state and district codes 
 # ALL
-state_codes <- c("OD", "AP", "TN")
-districts <- list(
-  OD = 1:6,
-  AP = 1:9,
-  TN = 1:12
-)
-years <- 2013:2025
+# state_codes <- c("OD", "AP", "TN")
+# districts <- list(
+#   OD = 1:6,
+#   AP = 1:9,
+#   TN = 1:12
+# )
+# years <- 2013:2025
 
 # # TEST
-# state_codes <- c("OD")
-# districts <- list(
-#   OD = 1:6
-# )
-# years <- 2024:2025
+state_codes <- c("TN")
+districts <- list(
+  TN = 1:12
+)
+years <- 1990:2012
 
 # Create output directory if it doesn't exist
 dir.create("outputs", showWarnings = FALSE)
@@ -69,10 +69,10 @@ process_district <- function(params) {
   
   # Construct file paths
   boundary_path <- sprintf("data/shp/%s_%d_AllData.shp", state_code, dist_code)
-  aqua_path <- sprintf("data/tif/Landsat8_classified_dtype_compress/%s/%s_%d/%s_%d_classified_%d.tif", 
-                       state_code, state_code, dist_code, state_code, dist_code, year)
-  landsat_path <- sprintf("data/tif/Landsat8_geomedian_dtype_compress/%s/%s_%d/%s_%d_geomedian_%d.tif", 
-                          state_code, state_code, dist_code, state_code, dist_code, year)
+  aqua_path <- sprintf("data/tif/Landsat5_classified_dtype_compress/%s_%d_classified_%d.tif", 
+                       state_code, dist_code, year)
+  landsat_path <- sprintf("data/tif/Landsat5_classified_dtype_compress/%s/%s_%d_geomedian_%d_predicted_predicted.tif", 
+                          state_code, state_code, dist_code, year)
   
   # Output file paths
   output_prefix <- sprintf("outputs/%s_%d_%d", state_code, dist_code, year)
@@ -111,11 +111,20 @@ process_district <- function(params) {
     # 1. Prepare landsat multiband image
     log_message("Preparing landsat data")
     landsat_df <- as.data.frame(landsat_image, na.rm = FALSE)
-    colnames(landsat_df) <- c("Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2", "NDVI", "NDWI", "NDSI")
+    colnames(landsat_df) <- c("Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2")
+    
+    # run for harmonised images - they need to be scaled back to SR 
+    landsat_df$Blue <- (landsat_df$Blue * 0.0000275) - 0.2
+    landsat_df$Red <- (landsat_df$Red * 0.0000275) - 0.2
+    landsat_df$Green <- (landsat_df$Green * 0.0000275) - 0.2
+    landsat_df$NIR <- (landsat_df$NIR * 0.0000275) - 0.2
+    landsat_df$SWIR1 <- (landsat_df$SWIR1 * 0.0000275) - 0.2
+    landsat_df$SWIR2 <- (landsat_df$SWIR2 * 0.0000275) - 0.2
+    
     
     landsat_df$ID <- seq_len(nrow(landsat_df))
     
-    landsat_df <- landsat_df[, c("ID", "Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2")] # Drop indices here - recalculate below
+    landsat_df <- landsat_df[, c("ID", "Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2")] 
     
     # Drop masked cells or where value is 0 (surface water cells)
     landsat_df <- subset(landsat_df, Blue != 0)

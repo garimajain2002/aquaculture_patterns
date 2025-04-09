@@ -83,7 +83,7 @@ process_district <- function(state_code, dist_code, year) {
     landsat_df <- as.data.frame(landsat_image, na.rm = FALSE)
     colnames(landsat_df) <- c("Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2")
     
-    # run only for harmonised images - they need to be scaled back to SR 
+    # run for harmonised images - they need to be scaled back to SR 
     landsat_df$Blue <- (landsat_df$Blue * 0.0000275) - 0.2
     landsat_df$Red <- (landsat_df$Red * 0.0000275) - 0.2
     landsat_df$Green <- (landsat_df$Green * 0.0000275) - 0.2
