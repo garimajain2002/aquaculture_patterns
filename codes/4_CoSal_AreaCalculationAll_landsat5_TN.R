@@ -55,9 +55,15 @@ best_threshold = 0.475
 state_codes <- c("TN")
 districts <- list(
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   TN = 7:11
 )
 years <- 1990:2001
+=======
+  TN = 1:12
+)
+years <- 1990:2012
+>>>>>>> Stashed changes
 =======
   TN = 1:12
 )
@@ -361,7 +367,11 @@ if (length(results_files) > 0) {
   
   # Save the combined results
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   write.csv(all_results, "outputs/all_districts_salinity_summary.csv", row.names = FALSE)
+=======
+  write.csv(all_results, "outputs/all_districts_salinity_summary_TN.csv", row.names = FALSE)
+>>>>>>> Stashed changes
 =======
   write.csv(all_results, "outputs/all_districts_salinity_summary_TN.csv", row.names = FALSE)
 >>>>>>> Stashed changes

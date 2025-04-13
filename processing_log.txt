@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 Processing started at 2025-04-13 04:00:43 
 Processed AP_3_2011: SUCCESS
 
@@ -5,3 +6,7 @@ Processed AP_3_2011: SUCCESS
 Successfully processed 1 out of 1 combinations (100.0%) 
 Processing finished at 2025-04-13 04:58:56 
 Created summary file with all results: outputs/all_districts_salinity_summary.csv
+=======
+Processing started at 2025-04-09 00:14:37 
+Processed TN_1_1990: FAILED
+>>>>>>> Stashed changes
