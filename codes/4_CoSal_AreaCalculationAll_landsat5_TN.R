@@ -52,11 +52,11 @@ best_threshold = 0.475
 # years <- 2013:2025
 
 # # TEST
-state_codes <- c("AP")
+state_codes <- c("TN")
 districts <- list(
-  AP = 7:9
+  TN = 7:11
 )
-years <- 1990:2012
+years <- 1990:2001
 
 # Create output directory if it doesn't exist
 dir.create("outputs", showWarnings = FALSE)
