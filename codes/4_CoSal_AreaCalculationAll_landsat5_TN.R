@@ -54,9 +54,15 @@ best_threshold = 0.475
 # # TEST
 state_codes <- c("TN")
 districts <- list(
+<<<<<<< Updated upstream
   TN = 7:11
 )
 years <- 1990:2001
+=======
+  TN = 1:12
+)
+years <- 1990:2012
+>>>>>>> Stashed changes
 
 # Create output directory if it doesn't exist
 dir.create("outputs", showWarnings = FALSE)
@@ -354,7 +360,11 @@ if (length(results_files) > 0) {
   }
   
   # Save the combined results
+<<<<<<< Updated upstream
   write.csv(all_results, "outputs/all_districts_salinity_summary.csv", row.names = FALSE)
+=======
+  write.csv(all_results, "outputs/all_districts_salinity_summary_TN.csv", row.names = FALSE)
+>>>>>>> Stashed changes
   cat("Created summary file with all results: outputs/all_districts_salinity_summary.csv\n")
   cat("Created summary file with all results: outputs/all_districts_salinity_summary.csv\n", 
       file = log_file, append = TRUE)
