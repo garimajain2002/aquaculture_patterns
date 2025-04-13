@@ -1,0 +1,66 @@
+Processing started at 2025-04-13 03:57:23 
+Processed TN_7_1990: FAILED
+Processed TN_7_1991: FAILED
+Processed TN_7_1992: SUCCESS
+Processed TN_7_1993: FAILED
+Processed TN_7_1994: FAILED
+Processed TN_7_1995: SUCCESS
+Processed TN_7_1996: SUCCESS
+Processed TN_7_1997: SUCCESS
+Processed TN_7_1998: FAILED
+Processed TN_7_1999: FAILED
+Processed TN_7_2000: FAILED
+Processed TN_7_2001: FAILED
+Processed TN_8_1990: FAILED
+Processed TN_8_1991: FAILED
+Processed TN_8_1992: FAILED
+Processed TN_8_1993: FAILED
+Processed TN_8_1994: FAILED
+Processed TN_8_1995: FAILED
+Processed TN_8_1996: FAILED
+Processed TN_8_1997: SUCCESS
+Processed TN_8_1998: FAILED
+Processed TN_8_1999: FAILED
+Processed TN_8_2000: FAILED
+Processed TN_8_2001: FAILED
+Processed TN_9_1990: FAILED
+Processed TN_9_1991: FAILED
+Processed TN_9_1992: FAILED
+Processed TN_9_1993: FAILED
+Processed TN_9_1994: FAILED
+Processed TN_9_1995: FAILED
+Processed TN_9_1996: FAILED
+Processed TN_9_1997: SUCCESS
+Processed TN_9_1998: FAILED
+Processed TN_9_1999: FAILED
+Processed TN_9_2000: FAILED
+Processed TN_9_2001: SUCCESS
+Processed TN_10_1990: FAILED
+Processed TN_10_1991: FAILED
+Processed TN_10_1992: FAILED
+Processed TN_10_1993: FAILED
+Processed TN_10_1994: FAILED
+Processed TN_10_1995: FAILED
+Processed TN_10_1996: FAILED
+Processed TN_10_1997: FAILED
+Processed TN_10_1998: FAILED
+Processed TN_10_1999: FAILED
+Processed TN_10_2000: FAILED
+Processed TN_10_2001: SUCCESS
+Processed TN_11_1990: FAILED
+Processed TN_11_1991: FAILED
+Processed TN_11_1992: FAILED
+Processed TN_11_1993: FAILED
+Processed TN_11_1994: FAILED
+Processed TN_11_1995: FAILED
+Processed TN_11_1996: FAILED
+Processed TN_11_1997: SUCCESS
+Processed TN_11_1998: FAILED
+Processed TN_11_1999: FAILED
+Processed TN_11_2000: FAILED
+Processed TN_11_2001: SUCCESS
+
+ Processing complete!
+Successfully processed 10 out of 60 combinations (16.7%) 
+Processing finished at 2025-04-13 07:00:57 
+Created summary file with all results: outputs/all_districts_salinity_summary.csv
