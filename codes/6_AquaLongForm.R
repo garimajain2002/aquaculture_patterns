@@ -8,6 +8,11 @@ library(readr)
 
 getwd()
 
+
+# ---------------------------------------------
+# Extract Landsat 8 period data 2013-2025 
+# ---------------------------------------------
+
 # Define state codes and districts
 state_codes <- c("OD", "AP", "TN")
 districts <- list(
@@ -168,10 +173,10 @@ for (state_code in state_codes) {
 }
 
 # Combine all results
-all_results <- do.call(rbind, results_list)
+landsat8_results <- do.call(rbind, results_list)
 
 # Check and clean data
-all_results <- all_results %>%
+landsat8_results <- landsat8_results %>%
   # Set appropriate types
   mutate(
     UniqueID = as.character(UniqueID),
@@ -184,10 +189,72 @@ all_results <- all_results %>%
   # Sort by UniqueID and year
   arrange(UniqueID, year)
 
+
+
+# ---------------------------------------------
+# Expand time to include all years 1990-2012 
+# ---------------------------------------------
+
+# First combine OD, AP, and TN csv 
+
+OD_data <- read.csv("data/OD_AquaStats_Landsat5_ExceltoCSV.csv")
+AP_data <- read.csv("data/AP_AquaStats_Landsat5_ExceltoCSV.csv")
+TN_data <- read.csv("data/TN_AquaStats_Landsat5_ExceltoCSV.csv")
+
+summary(OD_data)
+summary(AP_data)
+summary(TN_data)
+
+combine_landsat5 <- rbind(OD_data, AP_data, TN_data)
+summary(combine_landsat5)
+
+
+
+
+
+# # First, identify all unique combinations of UniqueID, state_code, and district_code
+# unique_ids <- landsat8_results %>%
+#   select(UniqueID, state_code, district_code) %>%
+#   distinct()
+# 
+# #write.csv(unique_ids, "data/All_uniqueIDs.csv")
+# 
+# 
+# # Create a dataframe for the years 1990-2012
+# historical_years <- 1990:2012
+# 
+# # Generate all combinations of UniqueID and historical years
+# historical_data <- unique_ids %>%
+#   crossing(year = historical_years) %>%
+#   # Keep only state_code and district_code columns from unique_ids
+#   select(UniqueID, year, state_code, district_code)
+# 
+# 
+# # DryAqua and Aqua columns will be NA for historical data
+# historical_data$DryAqua <- NA
+# historical_data$Aqua <- NA
+# 
+# # Combine the historical data with the existing data
+# extended_results <- bind_rows(historical_data, all_results) %>%
+#   # Sort by UniqueID and year for a clean dataset
+#   arrange(UniqueID, year)
+# 
+# # Display the structure of the extended dataset
+# str(extended_results)
+# head(extended_results)
+
+
+# ---------------------------------------------
+# Save long-form full dataframe 1990-2025 
+# ---------------------------------------------
+
+# Print summary
+cat("\nData conversion complete. Total records:", nrow(extended_results), "\n")
+cat("Years included:", paste(sort(unique(extended_results$year)), collapse=", "), "\n")
+cat("Total unique villages:", length(unique(extended_results$UniqueID)), "\n")
+
+
 # Save to CSV
 write.csv(all_results, "outputs/aquaculture_by_year_long_format.csv", row.names = FALSE)
 
-# Print summary
-cat("\nData conversion complete. Total records:", nrow(all_results), "\n")
-cat("Years included:", paste(sort(unique(all_results$year)), collapse=", "), "\n")
-cat("Total unique villages:", length(unique(all_results$UniqueID)), "\n")
+

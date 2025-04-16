@@ -75,7 +75,7 @@ for (state_code in state_codes) {
 
 # Check if we have any data
 if (length(all_data_frames) == 0) {
-  stop("No shapefiles were loaded successfully. Check your file paths.")
+  stop("No shapefiles were loaded successfully. Check file paths.")
 }
 
 # Create a set of all unique surge columns across all data frames
@@ -151,9 +151,81 @@ merged_data <- merged_data %>%
   select(UniqueID, all_of(all_surge_cols)) %>%
   distinct(UniqueID, .keep_all = TRUE)
 
+surge <- merged_data 
+
+# First rename the Surge fields to again include years (.shp truncates after 10 characters)
+surge$Surge_A12_1964	<- surge$Surge_A12_
+surge$Surge_A26_1971  <- surge$Surge_A26_	
+surge$Surge_A29_1974	<- surge$Surge_A29_
+surge$Surge_A33_1976	<- surge$Surge_A33_
+surge$Surge_A34_1977	<- surge$Surge_A34_
+surge$Surge_A37_1981	<- surge$Surge_A37_
+surge$Surge_A38_1982	<- surge$Surge_A38_
+surge$Surge_A39_1984	<- surge$Surge_A39_
+surge$Surge_A41_1986	<- surge$Surge_A41_
+surge$Surge_A43_1989	<- surge$Surge_A43_
+surge$Surge_A44_1990	<- surge$Surge_A44_
+surge$Surge_A46_1992  <- surge$Surge_A46_
+surge$Surge_A47_1993	<- surge$Surge_A47_
+surge$Surge_A48_1996	<- surge$Surge_A48_
+surge$Surge_A50_1999	<- surge$Surge_A50_
+surge$Surge_A55_2011	<- surge$Surge_A55_	
+
+head(surge)
+
+surge <- surge %>%
+  select( UniqueID, Surge_A12_1964,Surge_A26_1971, Surge_A29_1974, Surge_A33_1976, Surge_A34_1977, Surge_A37_1981, Surge_A38_1982, Surge_A39_1984, 
+         Surge_A41_1986, Surge_A43_1989, Surge_A44_1990, Surge_A46_1992, Surge_A47_1993, Surge_A48_1996, Surge_A50_1999, Surge_A55_2011 )
+
+head(surge)
+
+
+#_______________________
+# Long form Conversion
+#_______________________
+
+villageYears <- read.csv("data/All_villageYears.csv")
+
+# Extract the surge years
+surge_long <- surge %>%
+  # Select only UniqueID and surge columns
+  select(UniqueID, starts_with("Surge_")) %>%
+  # Pivot to long format
+  pivot_longer(cols = starts_with("Surge_"), 
+               names_to = "surge_column", 
+               values_to = "affected") %>%
+  # Keep only rows where affected = 1
+  filter(affected == 1) %>%
+  # Extract year from column name
+  mutate(surge_year = as.numeric(gsub(".*_([0-9]{4})$", "\\1", surge_column))) %>%
+  # For each UniqueID, find the earliest surge year
+  group_by(UniqueID) %>%
+  summarize(first_surge_year = min(surge_year))
+
+# Join with villageYears and create postSurge
+villageYears <- villageYears %>%
+  left_join(surge_long, by = "UniqueID") %>%
+  mutate(
+    # If there's no surge year, or the current year is before the first surge,
+    # postSurge is 0, otherwise 1
+    postSurge = case_when(
+      is.na(first_surge_year) ~ 0,
+      year < first_surge_year ~ 0,
+      TRUE ~ 1
+    )
+  ) %>%
+  # Remove the temporary column
+  select(-first_surge_year)
+
+head(villageYears)
+
+#_______________________
+# Export file
+#_______________________
+
 # Write to CSV
-write_csv(merged_data, "outputs/master_surge_dataset.csv")
+write_csv(villageYears, "outputs/master_surge_dataset.csv")
 
 # Print summary
-cat("Created master dataset with", nrow(merged_data), "rows and", ncol(merged_data), "columns\n")
-cat("Surge columns:", paste(all_surge_cols, collapse = ", "), "\n")
+cat("Created master dataset with", nrow(villageYears), "rows and", ncol(villageYears), "columns\n")
+

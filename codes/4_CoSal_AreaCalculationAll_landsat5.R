@@ -29,11 +29,11 @@ best_threshold = 0.475
 # years <- 2013:2025
 
 # # TEST
-state_codes <- c("OD")
+state_codes <- c("AP")
 districts <- list(
-  OD = 1:6
+  AP = 3:3
 )
-years <- 1990:2012
+years <- 2011:2011
 
 # Create output directory if it doesn't exist
 dir.create("outputs", showWarnings = FALSE)
@@ -198,7 +198,7 @@ process_district <- function(state_code, dist_code, year) {
                            state_code, dist_code, year), 
            fill = "Salinity Class")
     
-    ggsave(ec_map_path, plot = predicted_EC, width = 8, height = 6, dpi = 300)
+    #ggsave(ec_map_path, plot = predicted_EC, width = 8, height = 6, dpi = 300)
     
     # 4. Mask Aquaculture ponds
     aqua_df <- as.data.frame(aqua_image, xy = TRUE)
@@ -303,6 +303,8 @@ cat(summary_message, "\n")
 cat("\n", summary_message, "\n", file = log_file, append = TRUE)
 cat("Processing finished at", format(Sys.time()), "\n", file = log_file, append = TRUE)
 
+
+# Run the following after all are done
 # Create a summary CSV with all results
 results_files <- list.files("outputs", pattern = ".*_saline_area_by_zone\\.csv$", full.names = TRUE)
 if (length(results_files) > 0) {

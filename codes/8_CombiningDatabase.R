@@ -1,8 +1,8 @@
-# Combine Aquaculture (Y), Salinity (X1) and Storm Data to create master database 
-
-# First combine Aqua for multi years with salinity with multi-years. 
-# Second, for surge years (all prior to 2011 i.e. pre-landsat 8 period), if a village is ever affected by any of the 16 surges, then mark storm yes. 
-# Discuss with Dylan how to deal with LULC and Census (match to all or specific years only). 
+# Step 1 - create long data form with all uniqueIDs and years
+# Step 2 - Combine salinity (X1) data with this (already in long form) 
+# Step 3 - Combine surge (X2) data with this (already converted to long form in StormSurgeLongForm)
+# Step 4 - Combine aquaculture and dry aquaculture areas (Y) 
+# Step 5 - Merge LULC, DEM, Sea distance and Census data to this (Controls) 
 
 # Convert the variables to usable values (absolute to %s etc.) 
 
@@ -10,6 +10,38 @@
 library(dplyr)
 
 getwd() 
+
+
+#_________________________________________________________________________________________
+# Step 1 - Make a long form of all villages with all years as the base to bind other data
+#_________________________________________________________________________________________
+
+unique_ids <- read.csv("data/All_uniqueIDs.csv")
+
+unique_ids <- unique_ids %>%
+  select(UniqueID, state_code, district_code) %>%
+  distinct()
+
+head(unique_ids)
+
+summary(unique_ids)
+
+
+# Create a dataframe for the years 1990-2025
+years <- 1990:2025
+
+
+# Generate all combinations of UniqueID and historical years
+villageYears <- unique_ids %>%
+  crossing(year = years) %>%
+  # Keep only state_code and district_code columns from unique_ids
+  select(UniqueID, year, state_code, district_code)
+
+head(villageYears)
+summary(villageYears)
+
+write.csv(villageYears, "data/All_villageYears.csv")
+
 
 #_________________________________________________________________________
 # Read relevant dataframes
@@ -211,24 +243,6 @@ head(aqua_salinity_merged)
 
 
 # Combine Surge dataset 
-# First rename the Surge fields to again include years (.shp truncates after 10 characters)
-
-surge$Surge_A12_1964	<- surge$Surge_A12_
-surge$Surge_A26_1971  <- surge$Surge_A26_	
-surge$Surge_A29_1974	<- surge$Surge_A29_
-surge$Surge_A33_1976	<- surge$Surge_A33_
-surge$Surge_A34_1977	<- surge$Surge_A34_
-surge$Surge_A37_1981	<- surge$Surge_A37_
-surge$Surge_A38_1982	<- surge$Surge_A38_
-surge$Surge_A39_1984	<- surge$Surge_A39_
-surge$Surge_A41_1986	<- surge$Surge_A41_
-surge$Surge_A43_1989	<- surge$Surge_A43_
-surge$Surge_A44_1990	<- surge$Surge_A44_
-surge$Surge_A46_1992  <- surge$Surge_A46_
-surge$Surge_A47_1993	<- surge$Surge_A47_
-surge$Surge_A48_1996	<- surge$Surge_A48_
-surge$Surge_A50_1999	<- surge$Surge_A50_
-surge$Surge_A55_2011	<- surge$Surge_A55_	
 
 # For Landsat8 time period (post 2013), create a combined surge variable and mark all year instances as 1 if affected by any of these surges 
 # More checks will be needed for Landsat 5 years (1990-2012) 
