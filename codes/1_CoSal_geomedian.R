@@ -138,17 +138,18 @@ soil_data$VSSI <- (2 * soil_data$Green) - 5 * (soil_data$Red + soil_data$NIR)
 
 
 
-# Select EC type for classification
-soil_data$EC <- soil_data$EC_bin  
+
 
 # Keep only necessary columns
-soil_data <- soil_data[, c("Name", "EC", "Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2",
+soil_data <- soil_data[, c("Name", "EC", "EC_bin", "pH", "Soil_Moisture_Lab", "Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2",
                            "NDVI", "NDWI", "NDSI1", "NDSI2", "SI1", "SI2", "SI3", "SI4", "SI5", "SAVI", "VSSI",
                            "NBR", "NBG", "NBNIR", "NBSWIR1", "NBSWIR2", "NRSWIR1", "NRSWIR2", "NGSWIR1", "NGSWIR2",
                            "NNIRSWIR1", "NNIRSWIR2")]
 
 # Keep only numeric fields
 soil_data_numeric <- soil_data[, sapply(soil_data, is.numeric)]
+
+head(soil_data)
 
 write.csv(soil_data, "data/soil_data_allindices.csv")
 
