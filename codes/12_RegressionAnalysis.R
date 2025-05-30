@@ -16,7 +16,8 @@ library(fixest)    # for fixed effects with feols()
 
 getwd()
 
-data <- read.csv("outputs/aqua_salinity_surge_2013-2025.csv")
+data <- read.csv(unz("outputs/aqua_salinity_surge_1990-2025.zip", 
+                           "aqua_salinity_surge_1990-2025.csv"))
 
 head(data)
 summary(data)
@@ -24,8 +25,8 @@ summary(data)
 # Check for missing values
 missing_values <- colSums(is.na(data))
 print(missing_values)
-# Note: >150k are missing pct change. 
-# ! Check why and fix, or don't use that variable. 
+# Many pct_change_aqua and pct_change_salinity are NA. Might not want to use that for main analysis.  
+# Convert pct change to categorical and then use in analysis
 
 # Make year numeric for all variable creation and ordering
 data$Year <- as.numeric(as.character(data$Year))
@@ -65,24 +66,7 @@ duplicate_check <- data %>%
 
 print(duplicate_check)
 
-data_agg <- data %>%
-  group_by(UniqueID, Year) %>%
-  summarize(
-    Aqua_ha = mean(Aqua_ha, na.rm = TRUE),
-    Aqua_perc = mean(Aqua_perc, na.rm = TRUE),
-    Saline_perc = mean(Saline_perc, na.rm = TRUE),
-    postSurge = max(postSurge, na.rm = TRUE), # A village is affected if any record says so
-    salinity_storm_interaction <- Saline_perc * postSurge,
-    DEM_avg = mean(DEM_avg, na.rm = TRUE), 
-    NEAR_DIST = mean(NEAR_DIST, na.rm = TRUE),
-    
-    .groups = "drop"
-  )
 
-summary(data_agg)
-
-# Set up panel data structure
-pdata <- pdata.frame(data_agg, index = c("UniqueID", "Year"))
 
 
 
@@ -93,19 +77,19 @@ pdata <- pdata.frame(data_agg, index = c("UniqueID", "Year"))
 # accounting for distance and elevation from the sea. 
 
 # Model 1: Basic pooled OLS regression
-model_1 <- lm(Aqua_ha ~ postSurge + Saline_perc + 
-               NEAR_DIST + DEM_avg, data = data)
+model_1 <- lm(Aqua_perc ~ postSurge + Saline_perc + 
+               Sea_Dist + DEM_avg, data = data)
 summary(model_1)
 
 # Model 2: Adding the interaction term
-model_2 <- lm(Aqua_ha ~ postSurge + Saline_perc + 
-               salinity_storm_interaction + NEAR_DIST + 
+model_2 <- lm(Aqua_perc ~ postSurge + Saline_perc + 
+               salinity_storm_interaction + Sea_Dist + 
                DEM_avg, data = data)
 summary(model_2)
 
 
 # Model 3 - State level FE + Two way clustering (also clustering for villages across years)
-model_3 <- feols(Aqua_ha ~ postSurge + Saline_perc + 
+model_3 <- feols(Aqua_perc ~ postSurge + Saline_perc + 
                    salinity_storm_interaction + 
                    DEM_avg | State + Sea_Dist, 
                  data = data, 
@@ -118,23 +102,24 @@ models[['Basic OLS']] <- model_1
 models[['OLS + Interaction']] <- model_2
 models[['Fixed Effects (State+Dist)']] <- model_3
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+# Being affected by storms increases the likelihood of aquaculture perc by 1.138 pp. 
 
 
 # For persistent Salinity - Using the 5-year average salinity
 # Model 4: Basic pooled OLS regression
-model_4 <- lm(Aqua_ha ~ postSurge + avg_salinity_5yr + 
-                NEAR_DIST + DEM_avg, data = data)
+model_4 <- lm(Aqua_perc ~ postSurge + avg_salinity_5yr + 
+                Sea_Dist + DEM_avg, data = data)
 summary(model_4)
 
 # Model 5: Adding the interaction term
-model_5 <- lm(Aqua_ha ~ postSurge + avg_salinity_5yr + 
-                avg_salinity_5yr*postSurge + NEAR_DIST + 
+model_5 <- lm(Aqua_perc ~ postSurge + avg_salinity_5yr + 
+                avg_salinity_5yr*postSurge + Sea_Dist + 
                 DEM_avg, data = data)
 summary(model_5)
 
 
 # Model 6: State level FE + Two way clustering (also clustering for villages across years)
-model_6 <- feols(Aqua_ha ~ postSurge + avg_salinity_5yr + 
+model_6 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + 
                    avg_salinity_5yr*postSurge + DEM_avg | State + Sea_Dist, data = data, vcov=~UniqueID + District)
 summary(model_6)
 
@@ -143,26 +128,25 @@ models[['Basic OLS']] <- model_4
 models[['OLS + Interaction']] <- model_5
 models[['Fixed Effects (State+Dist)']] <- model_6
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
-
-
+# Persistent salinity increases the likelihood of aquaculture by (0.84-0.054)/0.54 compared to salinity in previous year alone. 
 
 
 
 # With Salinity as binary 
 # Model 7: Basic pooled OLS regression
-model_7 <- lm(Aqua_ha ~ postSurge + Saline + 
-                NEAR_DIST + DEM_avg, data = data)
+model_7 <- lm(Aqua_perc ~ postSurge + Saline + 
+                Sea_Dist + DEM_avg, data = data)
 summary(model_7)
 
 # Model 8: Adding the interaction term
-model_8 <- lm(Aqua_ha ~ postSurge + Saline + 
-                Saline * postSurge + NEAR_DIST + 
+model_8 <- lm(Aqua_perc ~ postSurge + Saline + 
+                Saline * postSurge + Sea_Dist+ 
                 DEM_avg, data = data)
 summary(model_8)
 
 
 # Model 9 - State level FE + Two way clustering (also clustering for villages across years)
-model_9 <- feols(Aqua_ha ~ postSurge + Saline + 
+model_9 <- feols(Aqua_perc ~ postSurge + Saline + 
                    Saline * postSurge + 
                    DEM_avg | State + Sea_Dist, 
                  data = data, 
@@ -175,6 +159,8 @@ models[['OLS + Interaction']] <- model_8
 models[['Fixed Effects (State+Dist)']] <- model_9
 
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+# When we take more than median salinity as the measure, the impact of storm surges disappears, potentially indicating that it is captured by salinity and other fixed effects. 
+# although the r2 is less than it is with salinity_perc
 
 
 # All FE (State and Distance) + Two-way clustered SEs
@@ -189,26 +175,41 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 
 # Two-way fixed effects 
 # Note: Two-way fixed effect controls for village-level fixed effects (absorbing time-invariant differences between villages) - which is why NEAR_DIST and DEM_avg get dropped.
-# Since we still don't have pre-storm years for any storm affected villages, this postStorm is also getting dropped. 
 # It controls for year fixed effects (accounting for changes common to all villages in a given year).
 # The model focuses on within-village variation over time rather than cross-sectional differences.
-# ! Do this AFTER adding Landsat5 years 
 
-# Model 5: Fixed effects model (two-way fixed effect - village and year fixed effects)
-model_5 <- plm(Aqua_ha ~ postSurge + Saline_perc + 
+data_agg <- data %>%
+  group_by(UniqueID, Year) %>%
+  summarize(
+    Aqua_ha = mean(Aqua_ha, na.rm = TRUE),
+    Aqua_perc = mean(Aqua_perc, na.rm = TRUE),
+    Saline_perc = mean(Saline_perc, na.rm = TRUE),
+    postSurge = max(postSurge, na.rm = TRUE), # A village is affected if any record says so
+    salinity_storm_interaction <- Saline_perc * postSurge,
+    DEM_avg = mean(DEM_avg, na.rm = TRUE),
+    NEAR_DIST = mean(NEAR_DIST, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+summary(data_agg)
+
+# Set up panel data structure
+pdata <- pdata.frame(data_agg, index = c("UniqueID", "Year"))
+
+# Model 10: Fixed effects model (two-way fixed effect - village and year fixed effects)
+model_10 <- plm(Aqua_perc ~ postSurge + Saline_perc + 
                  postSurge * Saline_perc, 
                data = pdata, 
                model = "within", 
                effect = "twoways")
-summary(model_5)
+summary(model_10)
 
 # Testing for serial correlation
-pbgtest(model_5)
+pbgtest(model_10)
 
-# Very high test statistic and very low p-value suggests that we reject the null hypothesis of no serial correlation 
+# This tests whether the error terms within a unit over time (e.g., for a village) are correlated.
 # Serial correlation violates a key assumption of standard regression models
-# standard errors are likely biased (usually underestimated)
-# significance tests may be invalid (i.e. "significant" effects that aren't really significant)
 
 # Since serial correlation is present, we could: 
 # 1. Use robust standard errors with vcovHC()
@@ -217,10 +218,17 @@ pbgtest(model_5)
 # 4. Try Newey-West standard errors or other corrections
 
 # Using robust standard errors
-robust_model_5 <- coeftest(model_5, vcov = vcovHC(model_5, type = "HC1"))
-print(robust_model_5)
+robust_model_10 <- coeftest(model_10, vcov = vcovHC(model_10, type = "HC1"))
+print(robust_model_10)
+# The effect estimates remain mostly the same and highly statistically significant, despite accounting for serial correlation and heteroskedasticity. 
 
+models <- list()
+models[['Robust Two-way FE']] <- robust_model_10
 
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+# This is mimicing the overall trend that suggests that salinity is going down while aquaculture is increasing
+# What we need to find is that in places where aquaculture is going up, whether salinity is going up or down
+# i.e. in a subset of places where there is above median aquaculture, se how salinity is responding. 
 
 
 
