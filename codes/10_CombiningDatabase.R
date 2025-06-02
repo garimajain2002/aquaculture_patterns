@@ -87,7 +87,6 @@ print("LULC data dimensions:")
 print(dim(lulc))
 print("LULC data column names:")
 print(colnames(lulc))
-# ! Many non-urban areas are likely NA. Match with TRU from Census and convert to 0 if Rural and Urban_pct is NA 
 
 head(census)
 print("Census data dimensions:")
@@ -328,13 +327,11 @@ head(aqua_salinity_surge)
 # Compare Shape_Area with total_area_ha to check how different they are
 # Same just in different units
 
-# ! Many non-urban areas are likely NA. Match with TRU from Census and convert to 0 if Rural and Urban_pct is NA 
+# Many non-urban areas are likely NA. Match with TRU from Census and convert to 0 if Rural and Urban_pct is NA 
 aqua_salinity_surge$urban_area_ha <- ifelse(aqua_salinity_surge$TRU=="Rural" & is.na(aqua_salinity_surge$urban_area_ha), 0, aqua_salinity_surge$urban_area_ha)
 aqua_salinity_surge$urban_percent <- aqua_salinity_surge$urban_area_ha / aqua_salinity_surge$total_area_ha *100
 
 head(aqua_salinity_surge)
-
-
 
 
 
@@ -385,7 +382,7 @@ aqua_salinity_surge$agriculture_percent <- ifelse(aqua_salinity_surge$agricultur
 aqua_salinity_surge$urban_percent <- ifelse(aqua_salinity_surge$urban_percent > 100, NA, aqua_salinity_surge$urban_percent)
 
 
-# ! Districts do not have images available for 2012, except 1 (TN_8). This district is skewing the average significantly.
+# Districts do not have images available for 2012, except 1 (TN_8). This district is skewing the average significantly.
 # Best to make the Aquaculture NA for these TN_8 2012 observations 
 aqua_salinity_surge_2012 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2012 & !is.na(aqua_salinity_surge$Aqua_perc), ]
 # Convert these 364 observations into NA
@@ -399,8 +396,8 @@ aqua_salinity_surge$DryAqua_ha[aqua_salinity_surge$Year == 2012] <- NA
 aqua_salinity_surge$Saline_ha[aqua_salinity_surge$Year == 2012] <- NA
 
 
-# ! Similarly, for year 1998, only TN_8 plus some parts of OD have satellite images that are skewing the overall results 
-# Best to make the Aquaculture NA for these 2012 observations (TN n=440; OD n = 5692)
+# Similarly, for year 1998, only TN_8 plus half of OD have satellite images that are skewing the overall results 
+# Best to make the Aquaculture NA for these 1998 observations (TN n=440; OD n = 5692)
 aqua_salinity_surge_1998 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1998 & !is.na(aqua_salinity_surge$Aqua_perc), ]
 table(aqua_salinity_surge_1998$state_code, aqua_salinity_surge_1998$district_code)
 
@@ -415,12 +412,84 @@ aqua_salinity_surge$DryAqua_ha[aqua_salinity_surge$Year == 1998] <- NA
 aqua_salinity_surge$Saline_ha[aqua_salinity_surge$Year == 1998] <- NA
 
 
+
+# Some over estimations in early landsat 5 period for TN also (1990, 1991, 1994) - make NA
+aqua_salinity_surge_1990 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_1990$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+
+aqua_salinity_surge_1991 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_1991$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+
+aqua_salinity_surge_1994 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_1994$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+# Some overestimations in TN in 2000 (n=358)
+aqua_salinity_surge_2000 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_2000$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+
+# ! Could subset by districts and only remove those that are problematic / exessive 
+# Some overestimations in TN in 2001 (n=)
+aqua_salinity_surge_2001 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+table(aqua_salinity_surge_2001$Aqua_perc, aqua_salinity_surge_2001$district_code)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+# Some overestimations in AP in 2001 (n=5139)
+aqua_salinity_surge_2001 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_2001$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
+
+
+
 # Also test 2011 (aqua areas seem very high)
 aqua_salinity_surge_2011 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2011 & !is.na(aqua_salinity_surge$Aqua_perc), ]
 # Number of observations (29200 or about 3%)
 # check how many from each state and district 
 table(aqua_salinity_surge_2011$state_code, aqua_salinity_surge_2011$district_code)
 # Almost all districts are in, so leaving it in
+
+
 
 
 # Calculate % change in aquaculture, dry aquaculture and salinity from previous year 
@@ -523,7 +592,7 @@ summary(aqua_salinity_surge$Saline_perc_norm)
 
 # Create Saline binary 
 median_saline <- median(aqua_salinity_surge$Saline_perc_norm, na.rm = TRUE)
-aqua_salinity_surge$Saline <- ifelse(aqua_salinity_surge$Saline_perc_norm >= median_saline_norm, 1, 0)
+aqua_salinity_surge$Saline <- ifelse(aqua_salinity_surge$Saline_perc_norm >= median_saline, 1, 0)
 
 
 # Aquaculture 
@@ -533,27 +602,6 @@ summary(lm_discont)
 # The coefficient for the sensor break (post-2012) is small and not statistically significant. That means: There is no evidence that aquaculture values jump discontinuously at 2013.
 # R-squared: ~0.00006 (negligible): The model explains almost none of the variation in Aqua_perc. This is expected, because you're only modeling it with year and a sensor-break dummy — no real predictors yet (like salinity or storm).
 # Aquaculture does not have a discontinuity at 2013. 
-
-
-# TEST 
-yearly_summary <- aqua_salinity_surge %>%
-  group_by(Year) %>%
-  summarize(
-    mean_aquaculture = mean(Aqua_perc, na.rm = TRUE),
-    mean_salinity = mean(Saline_perc_norm, na.rm = TRUE),
-    storm_affected_villages = sum(postSurge, na.rm = TRUE),
-    n_villages = n_distinct(UniqueID)
-  )
-print(yearly_summary)
-
-ggplot(yearly_summary, aes(x = Year, y = mean_salinity)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Average Saline Area Percentage Points by Year",
-       x = "Year", y = "Average Saline Area (%)") +
-  scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
-  
-  theme_minimal()
 
 
 # Categorize villages into four groups
@@ -577,12 +625,34 @@ head(aqua_salinity_surge)
 aqua_salinity_surge$State <- aqua_salinity_surge$state_code
 aqua_salinity_surge$District <- aqua_salinity_surge$district_code
 
+# Create a variable for perisistent salinity (5 year)
+aqua_salinity_surge <- aqua_salinity_surge %>%
+  group_by(UniqueID) %>%
+  arrange(Year) %>%
+  mutate(
+    Salinity_t1 = lag(Saline_perc_norm, 1),
+    Salinity_t2 = lag(Saline_perc_norm, 2),
+    Salinity_t3 = lag(Saline_perc_norm, 3),
+    Salinity_t4 = lag(Saline_perc_norm, 4),
+    Salinity_t5 = lag(Saline_perc_norm, 5),
+    Avg_Salinity_Last5 = rowMeans(cbind(Salinity_t1, Salinity_t2, Salinity_t3, Salinity_t4, Salinity_t5), na.rm = TRUE)
+  )
+
+# Create lag variables for aquaculture and salinity 
+aqua_salinity_surge <- aqua_salinity_surge %>%
+  group_by(UniqueID) %>%
+  mutate(
+    Lag_Aqua = lag(Aqua_perc), # Lag aquaculture by 1 year
+    Lag_Saline = lag(Saline_perc_norm))  # Lag salinity by one year
+
+head(aqua_salinity_surge)
+
 
 #_________________________________________________________________________
 # Clean database and save
 # ________________________________________________________________________
 
-aqua_salinity_surge <- aqua_salinity_surge %>% select(Row_no, UniqueID, Year, State, District, total_area_ha, NEAR_DIST, Sea_Dist, DEM_avg, Aqua_ha, DryAqua_ha, Saline_ha, Aqua_perc, DryAqua_perc, Saline_perc_norm, pct_change_aqua, pct_change_dryaqua, pct_change_salinity, smooth_pct_change_aqua_3, smooth_pct_change_aqua_5, smooth_pct_change_saline_3, smooth_pct_change_saline_5, flag_large_jump, postSurge, Saline, Saline_Storm_Category, 
+aqua_salinity_surge <- aqua_salinity_surge %>% select(Row_no, UniqueID, Year, State, District, total_area_ha, NEAR_DIST, Sea_Dist, DEM_avg, Aqua_ha, DryAqua_ha, Saline_ha, Aqua_perc, DryAqua_perc, Saline_perc_norm, Avg_Salinity_Last5, Lag_Aqua, Lag_Saline, pct_change_aqua, pct_change_dryaqua, pct_change_salinity, smooth_pct_change_aqua_3, smooth_pct_change_aqua_5, smooth_pct_change_saline_3, smooth_pct_change_saline_5, flag_large_jump, postSurge, Saline, Saline_Storm_Category, 
                                                       agriculture_area_ha, agriculture_percent, urban_area_ha, urban_percent, TRU, No_HH, TOT_P, TOT_M, TOT_F, P_LIT, M_LIT, F_LIT, P_ILL, M_ILL, F_ILL, TOT_WORK_P,TOT_WORK_M, TOT_WORK_F, MAINWORK_P, MAINWORK_M, MAINWORK_F, MARGWORK_P, MARGWORK_M,
                                                       MARGWORK_F, SC_P, SC_M,SC_F, ST_P, ST_M, ST_F, TOT_IRR,UN_IRR,CULT_WASTE,VHCF_NDMA)
 head(aqua_salinity_surge)

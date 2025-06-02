@@ -10,66 +10,16 @@ df <- read.csv(unz("outputs/aqua_salinity_surge_1990-2025.zip",
                    "aqua_salinity_surge_1990-2025.csv"))
 summary(df)
 
-# # create a filtered df with only 10-90 percentile values of Aqua_perc and Saline_perc_norm
-# df_filtered <- df %>%
-#   group_by(Year) %>%
-#   mutate(
-#     aqua_q10 = quantile(Aqua_perc, 0.10, na.rm = TRUE),
-#     aqua_q90 = quantile(Aqua_perc, 0.90, na.rm = TRUE),
-#     saline_q10 = quantile(Saline_perc_norm, 0.10, na.rm = TRUE),
-#     saline_q90 = quantile(Saline_perc_norm, 0.90, na.rm = TRUE)
-#   ) %>%
-#   ungroup() %>%
-#   filter(
-#     !is.na(Aqua_perc), !is.na(Saline_perc_norm),
-#     Aqua_perc >= aqua_q10 & Aqua_perc <= aqua_q90,
-#     Saline_perc_norm >= saline_q10 & Saline_perc_norm <= saline_q90
-#   ) %>%
-#   select(-aqua_q10, -aqua_q90, -saline_q10, -saline_q90)
-# 
-# # Assess what constitutes the extreme values
-# df_extreme <- df %>%
-#   group_by(Year) %>%
-#   mutate(
-#     aqua_q10 = quantile(Aqua_perc, 0.10, na.rm = TRUE),
-#     aqua_q90 = quantile(Aqua_perc, 0.90, na.rm = TRUE),
-#     saline_q10 = quantile(Saline_perc_norm, 0.10, na.rm = TRUE),
-#     saline_q90 = quantile(Saline_perc_norm, 0.90, na.rm = TRUE)
-#   ) %>%
-#   ungroup() %>%
-#   filter(
-#     !is.na(Aqua_perc), !is.na(Saline_perc_norm),
-#     (Aqua_perc < aqua_q10 | Aqua_perc > aqua_q90) |
-#       (Saline_perc_norm < saline_q10 | Saline_perc_norm > saline_q90)
-#   )
-# 
-# table(df_extreme$Sea_Dist)
-# ! So most of the observations getting dropped are those that are very near the sea coast
-# dropping these may affect the final results, so will have to keep all
-
-
 # Near and very near villages only 
 table(df$Sea_Dist)
 df_near <- df %>%
   filter(Sea_Dist %in% c("Very Near", "Near"))
 summary(df_near)
 
-# table(df_filtered$Sea_Dist)
-# dff_near <- df_filtered %>%
-#   filter(Sea_Dist %in% c("Very Near", "Near"))
-# summary(dff_near)
-
 # Very near villages only 
 df_vnear <- df %>%
   filter(Sea_Dist %in% c("Very Near"))
 summary(df_vnear)
-
-# dff_vnear <- df_filtered %>%
-#   filter(Sea_Dist %in% c("Very Near"))
-# summary(dff_vnear)
-
-
-
 
 
 # ################ SUMMMARY STATS ##############
@@ -109,6 +59,7 @@ print(yearly_summary)
 ggplot(yearly_summary, aes(x = Year, y = mean_aquaculture)) +
   geom_line() +
   geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linetype = "dashed" ) +
   labs(title = "Average Aquaculture Percentage Points by Year",
        x = "Year", y = "Average Aquaculture (%)") +
   scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
@@ -120,12 +71,73 @@ ggsave("outputs/AquaTrends_1990-25_Villages.png", width = 14, height = 6, dpi = 
 ggplot(yearly_summary, aes(x = Year, y = mean_salinity)) +
   geom_line() +
   geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linetype = "dashed" ) +
   labs(title = "Average Saline Area Percentage Points by Year",
        x = "Year", y = "Average Saline Area (%)") +
   scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
   
   theme_minimal()
-ggsave("outputs/SalineTrends_1990-25_Villages.png", width = 14, height = 6, dpi = 300)
+ggsave("outputs/SalineTrends_1990-25_allVillages.png", width = 14, height = 6, dpi = 300)
+
+
+# By states 
+yearly_state_summary <- df %>%
+  group_by(State, Year) %>%
+  summarize(
+    mean_aquaculture = mean(Aqua_perc, na.rm = TRUE),
+    mean_salinity = mean(Saline_perc_norm, na.rm = TRUE),
+    storm_affected_villages = sum(postSurge, na.rm = TRUE),
+    n_villages = n_distinct(UniqueID),
+    .groups = "drop"
+  )
+
+ggplot(yearly_state_summary, aes(x = Year, y = mean_aquaculture, color = State)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed") +
+  labs(title = "Average Aquaculture Percentage Points by Year and State",
+       x = "Year", y = "Average Aquaculture (%)") +
+  scale_x_continuous(breaks = seq(min(yearly_state_summary$Year), max(yearly_state_summary$Year), by = 1)) +
+  theme_minimal()
+ggsave("outputs/AquaTrends_1990-25_byState.png", width = 14, height = 6, dpi = 300)
+
+
+
+
+# For select State_Districts (storm affected vs not affected) 
+df$district_code <- paste(df$State, df$District, sep = "_")
+
+# Replace these with your actual district codes
+od_districts <- c("OD_4", "OD_5")
+ap_districts <- c("AP_6", "AP_1")
+tn_districts <- c("TN_5", "TN_6")
+
+selected_districts <- c(tn_districts)
+
+df_selected <- df %>% filter(district_code %in% selected_districts)
+
+yearly_dist_summary <- df_selected %>%
+  group_by(district_code, Year) %>%
+  summarize(
+    mean_aquaculture = mean(Aqua_perc, na.rm = TRUE),
+    mean_salinity = mean(Saline_perc_norm, na.rm = TRUE),
+    storm_affected_villages = sum(postSurge, na.rm = TRUE),
+    n_villages = n_distinct(UniqueID),
+    .groups = "drop"
+  )
+
+ggplot(yearly_dist_summary, aes(x = Year, y = mean_aquaculture, color = district_code)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed") +
+  labs(title = "Average Aquaculture Percentage Points by Year for select Districts",
+       x = "Year", y = "Average Aquaculture (%)") +
+  scale_x_continuous(breaks = seq(min(yearly_state_summary$Year), max(yearly_state_summary$Year), by = 1)) +
+  scale_color_manual(values = c("TN_5" = "blue", "TN_6" = "orange")) +  # <-- manually define colors here
+  theme_minimal()
+ggsave("outputs/AquaTrends_1990-25_SelectDist_TN.png", width = 14, height = 6, dpi = 300)
+
+
 
 
 
@@ -646,30 +658,30 @@ cor.test(df_lag$Lag_Saline, df_lag$Aqua_perc, use = "complete.obs")
 
 
 # Takes too long to process
-ggplot(df_lag, aes(x = Lag_Saline, y = Aqua_perc)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth(method = "lm", se = FALSE, color = "red") +
-  labs(x = "Salinity in Previous Year", y = "Aquaculture in Current Year",
-       title = "Impact of Previous Year's Salinity on Aquaculture") +
-  theme_minimal()
+# ggplot(df_lag, aes(x = Lag_Saline, y = Aqua_perc)) +
+#   geom_point(alpha = 0.2) +
+#   geom_smooth(method = "lm", se = FALSE, color = "red") +
+#   labs(x = "Salinity in Previous Year", y = "Aquaculture in Current Year",
+#        title = "Impact of Previous Year's Salinity on Aquaculture") +
+#   theme_minimal()
 
-ggplot(df_lag, aes(x = Lag_Saline, y = Aqua_perc)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth(method = "loess", se = FALSE, color = "red") +
-  labs(x = "Salinity in Previous Year", y = "Aquaculture in Current Year",
-       title = "Impact of Previous Year's Salinity on Aquaculture") +
-  theme_minimal()
+# ggplot(df_lag, aes(x = Lag_Saline, y = Aqua_perc)) +
+#   geom_point(alpha = 0.2) +
+#   geom_smooth(method = "loess", se = FALSE, color = "red") +
+#   labs(x = "Salinity in Previous Year", y = "Aquaculture in Current Year",
+#        title = "Impact of Previous Year's Salinity on Aquaculture") +
+#   theme_minimal()
 
 
 
 # 7. Lagged Correlation (Aquaculture t-1 vs. Salinity t)
-df_lag <- df %>%
-  group_by(UniqueID) %>%
-  mutate(Lag_Aqua = lag(Aqua_perc))  # Lag salinity by one year
+# df_lag <- df %>%
+#   group_by(UniqueID) %>%
+#   mutate(Lag_Aqua = lag(Aqua_perc))  # Lag salinity by one year
 
-cor.test(df_lag$Lag_Aqua, df_lag$Saline_perc_norm, use = "complete.obs")
+cor.test(df$Lag_Aqua, df$Saline_perc_norm, use = "complete.obs")
 # 1990-2025
-# Interpretation: Positive correlation (r ≈ 0.13): Higher aquaculture in the previous year is associated with higher salinity in the current year.
+# Interpretation: Positive correlation (r ≈ 0.12): Higher aquaculture in the previous year is associated with higher salinity in the current year.
 # Statistically significant: Very strong evidence that this relationship isn’t due to chance, given the sample size.
 # Effect size is small but meaningful: These kinds of socio-environmental processes are rarely high-correlation because they’re influenced by many factors.
 # This suggests that aquaculture may contribute to rising salinity over time. Some plausible mechanisms include:
@@ -684,13 +696,13 @@ ggplot(df_lag, aes(x = Lag_Aqua, y = Saline_perc_norm)) +
   theme_minimal()
 # Observation: The linear correlation indicates a positive relationship between aquaculture in the previous year and salinity in the current year
 
-gplot(df_lag, aes(x = Lag_Aqua, y = Saline_perc_norm)) +
-  geom_point(alpha = 0.2) + # set point transparency 0.2 = 80% transparent
-  geom_smooth(method = "loess", se = FALSE, color = "red") +
-  labs(x = "Aquaculture in Previous Year", y = "Salinity in Current Year",
-       title = "Impact of Previous Year's Aquaculture on Salinity") +
-  theme_minimal()
-# Observation: 
+# Takes too long to process
+# gplot(df_lag, aes(x = Lag_Aqua, y = Saline_perc_norm)) +
+#   geom_point(alpha = 0.2) + # set point transparency 0.2 = 80% transparent
+#   geom_smooth(method = "loess", se = FALSE, color = "red") +
+#   labs(x = "Aquaculture in Previous Year", y = "Salinity in Current Year",
+#        title = "Impact of Previous Year's Aquaculture on Salinity") +
+#   theme_minimal()
 
 
 # 8. Persistence of salinity over 5 years and relationship with aquaculture
@@ -706,26 +718,39 @@ df_lagged <- df %>%
     Salinity_t3 = lag(Saline_perc_norm, 3),
     Salinity_t4 = lag(Saline_perc_norm, 4),
     Salinity_t5 = lag(Saline_perc_norm, 5),
-    Avg_SalinityPerc_Last5 = rowMeans(cbind(Salinity_t1, Salinity_t2, Salinity_t3, Salinity_t4, Salinity_t5), na.rm = TRUE)
+    Avg_Salinity_Last5 = rowMeans(cbind(Salinity_t1, Salinity_t2, Salinity_t3, Salinity_t4, Salinity_t5), na.rm = TRUE)
   )
 
-cor.test(df_lagged$Avg_SalinityPerc_Last5, df_lagged$Aqua_perc, use = "complete.obs")
-# 1990-2025 
-# Interpretation: There is a statistically significant, but weak positive relationship between average salinity in the past 5 years and current aquaculture extent.
-# i.e. villages with higher past salinity tend to have slightly higher current aquaculture—but the effect is modest.
+cor.test(df_lagged$Avg_Salinity_Last5, df_lagged$Aqua_perc, use = "complete.obs")
+# 1990-2025 (after removing some overestimated years in TN) 
+# Interpretation: Positive correlation (r ≈ 0.12): Higher salinity over the previous 5 years is associated with more aquaculture land in the current year.
+# Modest in size — but statistically very robust.
+# Suggests that persistent salinity (not just one-off spikes) plays a stronger role in shaping aquaculture land use decisions.
+# This supports the hypothesis that aquaculture is a long-term adaptation to sustained salinity exposure.
+# Short-term shocks may not be enough to drive land use change.
+# But persistent saline conditions over multiple years likely make traditional agriculture less viable, nudging communities toward aquaculture.
+# It adds weight to the environmental adaptation narrative over a reactive one-year response.
+# However, salinity alone may not be a strong predictor. Other factors (e.g., geography, storms, policy, land use, economic incentives) might also be influencing aquaculture expansion.
 
-# 2013-2025
-# Interpretation: The relationship is statistically significant, but significance does not imply strength—the correlation is still weak (0.1957). 
-# This suggests that higher past salinity might be slightly linked to increased aquaculture, but salinity alone is not a strong predictor.
-# Other factors (e.g., geography, storms, policy, land use, economic incentives) might also be influencing aquaculture expansion.
+ggplot(df_lagged, aes(x = Avg_Salinity_Last5, y = Aqua_perc)) +
+  geom_bin2d() +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal()
 
 
 # 9. Check for non-linearity 
-ggplot(df_lagged, aes(x = Avg_SalinityPerc_Last5, y = Aqua_perc)) +
+ggplot(df_lagged, aes(x = Avg_Salinity_Last5, y = Aqua_perc)) +
   geom_point(alpha = 0.2) +
   geom_smooth(method = "loess", color = "red") +
   theme_minimal() +
   labs(title = "Relationship between Past Salinity (5-Year Avg) and Aquaculture")
+
+
+# Interpretation: This gives us evidence in both directions:
+# Past salinity → more aquaculture (r ≈ 0.14)
+# Past aquaculture → more salinity (r ≈ 0.13)
+# This suggests a two-way dynamic: feedback loop.
+# This positions us well to build dynamic panel models / structural models to capture the interplay between aquaculture and salinity over time
 
 
 # Next step is to run multiple regression models to account for other variables and isolate the effects of salinity and storm surge 
