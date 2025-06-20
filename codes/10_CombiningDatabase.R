@@ -354,6 +354,25 @@ head(aqua_salinity_surge)
 summary(aqua_salinity_surge$Saline_perc)
 summary(aqua_salinity_surge$Aqua_perc)
 
+
+
+aqua_salinity_surge <- aqua_salinity_surge %>% select(Row_no, UniqueID, Year, state_code, district_code, total_area_ha, first_surge_year, postSurge, Aqua_ha, DryAqua_ha, Saline_ha, Aqua_perc, DryAqua_perc, Saline_perc, 
+                                                      NEAR_DIST, Sea_Dist, DEM_avg, agriculture_area_ha, agriculture_percent, urban_area_ha, urban_percent, TRU, No_HH, TOT_P, TOT_M, TOT_F, P_LIT, M_LIT, F_LIT, P_ILL, M_ILL, F_ILL, TOT_WORK_P,TOT_WORK_M, TOT_WORK_F, MAINWORK_P, MAINWORK_M, MAINWORK_F, MARGWORK_P, MARGWORK_M,
+                                                      MARGWORK_F, SC_P, SC_M,SC_F, ST_P, ST_M, ST_F, TOT_IRR,UN_IRR,CULT_WASTE,VHCF_NDMA)
+
+
+# ---- SPOT CHECK AND CLEANING ERRORS -----
+
+# ! Check AP in Landsat 5 period more closely (OD and TN done)
+# Krishna district (out of all districts not just in database, but of all places in India) is amongst the desnsest concentration of aquaculture. 
+# That is about 7% aquaculture, bulk of it concentrated in the coastal belt. 
+# Machilipatnam rural is amongst the densest aquaculture village, with about 20% area in aquaculture. 
+# See this for records : https://apsac.ap.gov.in/dashboard-staging/ap-aquaculture-information-system/#
+# Even if some of these are underestimates, it is still unlikely any place is over 30% aquaculture in any past time period. 
+# If they are getting recorded as such, they are likely waterbodies / clouded/missing pixels. 
+# Focus only on places with 0-30% aqua perc. 
+
+
 morethan100_Aqua <- subset(aqua_salinity_surge, Aqua_perc > 100)
 summary(morethan100_Aqua$Year)
 morethan100_Aqua$Aqua_pixels_calc <- morethan100_Aqua$Aqua_ha * 10000 / 900
@@ -366,14 +385,9 @@ summary(lessthan0_saline$Year)
 
 # 3910 observations have more than 100% aquaculture. This could be owing to differences in area calculation projections. 
 # 105 observations also have less than 0 saline%, likely owing to aquaculture area dependence in their calculations. 
-# # Option 1: Limit perc max to 100% 
-# aqua_salinity_surge$Aqua_perc <- pmin(aqua_salinity_surge$Aqua_perc, 100)
-# aqua_salinity_surge$DryAqua_perc <- pmin(aqua_salinity_surge$DryAqua_perc, 100)
-# aqua_salinity_surge$Saline_perc <- pmin(aqua_salinity_surge$Saline_perc, 100)
-# aqua_salinity_surge$agriculture_percent <- pmin(aqua_salinity_surge$agriculture_percent, 100)
-# aqua_salinity_surge$urban_percent <- pmin(aqua_salinity_surge$urban_percent, 100)
+# Option 1: Limit perc max to 100% 
 
-# Option 2: Make them NA
+# Option 2: Make them NA - more robust approach to account for erroneous calculations
 aqua_salinity_surge$Aqua_perc <- ifelse(aqua_salinity_surge$Aqua_perc > 100, NA, aqua_salinity_surge$Aqua_perc)
 aqua_salinity_surge$DryAqua_perc <- ifelse(aqua_salinity_surge$DryAqua_perc > 100, NA, aqua_salinity_surge$DryAqua_perc)
 aqua_salinity_surge$Saline_perc <- ifelse(aqua_salinity_surge$Saline_perc > 100, NA, aqua_salinity_surge$Saline_perc)
@@ -381,6 +395,909 @@ aqua_salinity_surge$Saline_perc <- ifelse(aqua_salinity_surge$Saline_perc < 0, N
 aqua_salinity_surge$agriculture_percent <- ifelse(aqua_salinity_surge$agriculture_percent > 100, NA, aqua_salinity_surge$agriculture_percent)
 aqua_salinity_surge$urban_percent <- ifelse(aqua_salinity_surge$urban_percent > 100, NA, aqua_salinity_surge$urban_percent)
 
+# Some over estimations in early landsat 5 period for TN - make anything measured above 10% = 0 since there was no known aquaculture in TN at the time
+# Dominantly some large water bodies, and clouded/ missing pixels being captured as aquaculture - could also just selectively remove those villages and not all 
+# Check log for AquaSpotErrorCheck
+
+# 1990
+aqua_salinity_surge_1990 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1990 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1990$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1990$UniqueID[aqua_salinity_surge_1990$Aqua_perc > 10])
+print(error_villages)
+# 189 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1990 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+# OD in 1990 
+aqua_salinity_surge_1990 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1990 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1990$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1990$UniqueID[aqua_salinity_surge_1990$Aqua_perc > 10])
+print(error_villages)
+# 125 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1990 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# AP in 1990 
+aqua_salinity_surge_1990 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1990 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1990$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1990$UniqueID[aqua_salinity_surge_1990$Aqua_perc > 20])
+print(error_villages)
+# 74 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1990 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# 1991
+aqua_salinity_surge_1991 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1991 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1991$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1991$UniqueID[aqua_salinity_surge_1991$Aqua_perc > 10])
+print(error_villages)
+# 320 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1991 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+#OD in 1991 
+aqua_salinity_surge_1991 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1991 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1991$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1991$UniqueID[aqua_salinity_surge_1991$Aqua_perc > 10])
+print(error_villages)
+# 292 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1991 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# 1992
+aqua_salinity_surge_1992 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1992 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1992$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1992$UniqueID[aqua_salinity_surge_1992$Aqua_perc > 10])
+print(error_villages)
+# 142 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1992 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 1992 
+aqua_salinity_surge_1992 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1992 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1992$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1992$UniqueID[aqua_salinity_surge_1992$Aqua_perc > 10])
+print(error_villages)
+# 57 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1992 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# 1993
+aqua_salinity_surge_1993 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1993 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1993$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1993$UniqueID[aqua_salinity_surge_1993$Aqua_perc > 10])
+print(error_villages)
+# 114 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1993 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# AP in 1993, 1994, and 1995 are also erroneous 
+# Check log > AquacultureSpotErrorCheck
+aqua_salinity_surge_1993 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1993 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1993$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1993$UniqueID[aqua_salinity_surge_1993$Aqua_perc > 20])
+print(error_villages)
+# 176 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1993 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 1993 
+aqua_salinity_surge_1993 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1993 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1993$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1993$UniqueID[aqua_salinity_surge_1993$Aqua_perc > 10])
+print(error_villages)
+# 267 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1993 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# 1994
+aqua_salinity_surge_1994 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1994 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1994$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1994$UniqueID[aqua_salinity_surge_1994$Aqua_perc > 10])
+print(error_villages)
+# 176 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1994 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# AP in 1994
+aqua_salinity_surge_1994 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1994 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1994$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1994$UniqueID[aqua_salinity_surge_1994$Aqua_perc > 20])
+print(error_villages)
+# 197 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1994 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 1994 
+aqua_salinity_surge_1994 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1994 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1994$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1994$UniqueID[aqua_salinity_surge_1994$Aqua_perc > 10])
+print(error_villages)
+# 199 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1994 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# 1995
+aqua_salinity_surge_1995 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1995 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1995$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1995$UniqueID[aqua_salinity_surge_1995$Aqua_perc > 10])
+print(error_villages)
+# 241 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1995 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# AP in 1995
+aqua_salinity_surge_1995 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1995 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1995$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1995$UniqueID[aqua_salinity_surge_1995$Aqua_perc > 20])
+print(error_villages)
+# 291 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1995 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+# OD in 1995 
+aqua_salinity_surge_1995 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1995 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1995$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1995$UniqueID[aqua_salinity_surge_1995$Aqua_perc > 10])
+print(error_villages)
+# 295 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1995 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+# OD1, OD3, OD4 and OD5 have overestimations in years 1996, 1997, 1998
+# Check log > AquacultureSpotErrorCheck
+# 1996
+aqua_salinity_surge_1996 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1996 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1996$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1996$UniqueID[aqua_salinity_surge_1996$Aqua_perc > 10])
+print(error_villages)
+# 149 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1996 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 1996 
+aqua_salinity_surge_1996 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1996 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1996$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1996$UniqueID[aqua_salinity_surge_1996$Aqua_perc > 10])
+print(error_villages)
+# 90 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1996 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# 1997
+aqua_salinity_surge_1997 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1997 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1997$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1997$UniqueID[aqua_salinity_surge_1997$Aqua_perc > 10])
+print(error_villages)
+# 292 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1997 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+# OD in 1997 
+aqua_salinity_surge_1997 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 1997 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_1997$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_1997$UniqueID[aqua_salinity_surge_1997$Aqua_perc > 10])
+print(error_villages)
+# 251 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 1997 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# For year 1998, only TN_8 plus some of OD have satellite images that are skewing the overall results
+# Best to make the Aquaculture NA for these 1998 observations (TN n=440; OD n = 5692)
+aqua_salinity_surge_1998 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1998 & !is.na(aqua_salinity_surge$Aqua_perc), ]
+table(aqua_salinity_surge_1998$state_code, aqua_salinity_surge_1998$district_code)
+
+sum(aqua_salinity_surge_1998$Year == 1998 & aqua_salinity_surge_1998$state_code == "TN" & aqua_salinity_surge_1998$district_code == 8)
+sum(aqua_salinity_surge_1998$Year == 1998 & aqua_salinity_surge_1998$state_code == "OD")
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1998] <- NA
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1998] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1998] <- NA
+aqua_salinity_surge$Aqua_ha[aqua_salinity_surge$Year == 1998] <- NA
+aqua_salinity_surge$DryAqua_ha[aqua_salinity_surge$Year == 1998] <- NA
+aqua_salinity_surge$Saline_ha[aqua_salinity_surge$Year == 1998] <- NA
+
+
+
+# Some overestimations in TN in 2000 (N=358 - make all NAs)
+aqua_salinity_surge_2000 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
+summary(aqua_salinity_surge_2000$Aqua_perc)
+
+aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+summary(aqua_salinity_surge$Aqua_perc)
+
+aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
+
+
+# OD in 2000 
+aqua_salinity_surge_2000 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2000 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2000$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2000$UniqueID[aqua_salinity_surge_2000$Aqua_perc > 10])
+print(error_villages)
+# 202 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2000 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# AP in 2000 
+aqua_salinity_surge_2000 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2000 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2000$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2000$UniqueID[aqua_salinity_surge_2000$Aqua_perc > 30])
+print(error_villages)
+# 72 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2000 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# Some overestimations in TN in 2001 (n=4475)
+aqua_salinity_surge_2001 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2001 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2001$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2001$UniqueID[aqua_salinity_surge_2001$Aqua_perc > 10])
+print(error_villages)
+# 322 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2001 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# Some overestimations in AP in 2001
+aqua_salinity_surge_2001 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2001 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2001$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2001$UniqueID[aqua_salinity_surge_2001$Aqua_perc > 10])
+print(error_villages)
+# 240 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2001 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 2001
+aqua_salinity_surge_2001 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2001 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2001$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2001$UniqueID[aqua_salinity_surge_2001$Aqua_perc > 10])
+print(error_villages)
+# 163 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2001 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# TN in 2004 
+aqua_salinity_surge_2004 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2004 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2004$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2004$UniqueID[aqua_salinity_surge_2004$Aqua_perc > 10])
+print(error_villages)
+# 42 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2004 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 2004 
+aqua_salinity_surge_2004 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2004 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2004$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2004$UniqueID[aqua_salinity_surge_2004$Aqua_perc > 10])
+print(error_villages)
+# 292 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2004 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# TN in 2005 
+aqua_salinity_surge_2005 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2005 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2005$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2005$UniqueID[aqua_salinity_surge_2005$Aqua_perc > 10])
+print(error_villages)
+# 142 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2005 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 2005 
+aqua_salinity_surge_2005 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2005 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2005$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2005$UniqueID[aqua_salinity_surge_2005$Aqua_perc > 10])
+print(error_villages)
+# 209 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2005 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# TN in 2006 
+aqua_salinity_surge_2006 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2006 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2006$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2006$UniqueID[aqua_salinity_surge_2006$Aqua_perc > 10])
+print(error_villages)
+# 159 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2006 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 2006 
+aqua_salinity_surge_2006 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2006 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2006$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2006$UniqueID[aqua_salinity_surge_2006$Aqua_perc > 10])
+print(error_villages)
+# 201 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2006 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# TN in 2007 
+aqua_salinity_surge_2007 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2007 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2007$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2007$UniqueID[aqua_salinity_surge_2007$Aqua_perc > 10])
+print(error_villages)
+# 139 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2007 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# OD in 2007 
+aqua_salinity_surge_2007 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2007 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2007$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2007$UniqueID[aqua_salinity_surge_2007$Aqua_perc > 10])
+print(error_villages)
+# 153 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2007 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# TN_2 and 3 in 2008, 2009 and 2010 image is calculating water bodies as aquaculture 
+# Check log for AquaSpotErrorCheck and correct for select villages
+# TN in 2008 
+aqua_salinity_surge_2008 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2008 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2008$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2008$UniqueID[aqua_salinity_surge_2008$Aqua_perc > 10])
+print(error_villages)
+# 225 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2008 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# TN in 2009 
+aqua_salinity_surge_2009 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2009 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2009$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2009$UniqueID[aqua_salinity_surge_2009$Aqua_perc > 10])
+print(error_villages)
+# 176 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2009 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# TN in 2010
+aqua_salinity_surge_2010 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2010 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2010$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2010$UniqueID[aqua_salinity_surge_2010$Aqua_perc > 10])
+print(error_villages)
+# 321 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2010 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+
+# Test 2011 (aqua areas seem very high)
+aqua_salinity_surge_2011 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2011 & !is.na(aqua_salinity_surge$Aqua_perc), ]
+# Number of observations (29200 or about 3%)
+# check how many from each state and district 
+table(aqua_salinity_surge_2011$state_code, aqua_salinity_surge_2011$district_code)
+# Almost all districts are in, so do it selectively
+
+# TN in 2011
+aqua_salinity_surge_2011 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2011 &
+    aqua_salinity_surge$state_code == "TN" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2011$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2011$UniqueID[aqua_salinity_surge_2011$Aqua_perc > 10])
+print(error_villages)
+# 437 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2011 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+
+# AP in 2011
+aqua_salinity_surge_2011 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2011 &
+    aqua_salinity_surge$state_code == "AP" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2011$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2011$UniqueID[aqua_salinity_surge_2011$Aqua_perc > 30])
+print(error_villages)
+# 97 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2011 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
+
+# OD in 2011
+aqua_salinity_surge_2011 <- aqua_salinity_surge[
+  aqua_salinity_surge$Year == 2011 &
+    aqua_salinity_surge$state_code == "OD" &
+    aqua_salinity_surge$district_code %in% c(1, 2, 3, 4, 5, 6) &
+    !is.na(aqua_salinity_surge$Aqua_perc),
+]
+summary(aqua_salinity_surge_2011$Aqua_perc)
+error_villages <- unique(aqua_salinity_surge_2011$UniqueID[aqua_salinity_surge_2011$Aqua_perc > 20])
+print(error_villages)
+# 140 villages need to be corrected
+
+rows_to_modify <- aqua_salinity_surge$Year == 2011 & 
+  aqua_salinity_surge$UniqueID %in% error_villages
+
+sum(rows_to_modify) # should be same as error_villages
+
+aqua_salinity_surge[rows_to_modify, c("Aqua_perc", "Aqua_ha", "DryAqua_perc", "DryAqua_ha")] <- 0
+
+summary(aqua_salinity_surge$Aqua_perc)
 
 # Districts do not have images available for 2012, except 1 (TN_8). This district is skewing the average significantly.
 # Best to make the Aquaculture NA for these TN_8 2012 observations 
@@ -396,156 +1313,71 @@ aqua_salinity_surge$DryAqua_ha[aqua_salinity_surge$Year == 2012] <- NA
 aqua_salinity_surge$Saline_ha[aqua_salinity_surge$Year == 2012] <- NA
 
 
-# Similarly, for year 1998, only TN_8 plus half of OD have satellite images that are skewing the overall results 
-# Best to make the Aquaculture NA for these 1998 observations (TN n=440; OD n = 5692)
-aqua_salinity_surge_1998 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1998 & !is.na(aqua_salinity_surge$Aqua_perc), ]
-table(aqua_salinity_surge_1998$state_code, aqua_salinity_surge_1998$district_code)
+# Plot Aqua_perc change by year 
+# Create Aqua_perc buckets (adjust breaks as needed)
+aqua_salinity_surge$Aqua_bucket <- cut(
+  aqua_salinity_surge$Aqua_perc,
+  breaks = c(0, 5, 10, 25, 50, 75, 100),
+  include.lowest = TRUE,
+  right = FALSE
+)
 
-sum(aqua_salinity_surge_1998$Year == 1998 & aqua_salinity_surge_1998$state_code == "TN" & aqua_salinity_surge_1998$district_code == 8)
-sum(aqua_salinity_surge_1998$Year == 1998 & aqua_salinity_surge_1998$state_code == "OD")
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1998] <- NA
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1998] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1998] <- NA 
-aqua_salinity_surge$Aqua_ha[aqua_salinity_surge$Year == 1998] <- NA
-aqua_salinity_surge$DryAqua_ha[aqua_salinity_surge$Year == 1998] <- NA
-aqua_salinity_surge$Saline_ha[aqua_salinity_surge$Year == 1998] <- NA
-
-
-
-# Some over estimations in early landsat 5 period for TN also (1990, 1991, 1994) - make NA
-aqua_salinity_surge_1990 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-summary(aqua_salinity_surge_1990$Aqua_perc)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1990 & aqua_salinity_surge$state_code == "TN"] <- NA
+ggplot(aqua_salinity_surge[!is.na(aqua_salinity_surge$Aqua_bucket), ], 
+       aes(x = Aqua_bucket, y = Year)) +
+  geom_jitter(aes(color = as.factor(state_code)), width = 0.2, height = 0.3, alpha = 0.6) +
+  labs(x = "Aquaculture % Bucket", y = "Year", color = "State") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 
-aqua_salinity_surge_1991 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-summary(aqua_salinity_surge_1991$Aqua_perc)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1991 & aqua_salinity_surge$state_code == "TN"] <- NA
 
 
 
-aqua_salinity_surge_1994 <- aqua_salinity_surge[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-summary(aqua_salinity_surge_1994$Aqua_perc)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 1994 & aqua_salinity_surge$state_code == "TN"] <- NA
-
-
-# Some overestimations in TN in 2000 (n=358)
-aqua_salinity_surge_2000 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-summary(aqua_salinity_surge_2000$Aqua_perc)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2000 & aqua_salinity_surge$state_code == "TN"] <- NA
-
-
-
-# ! Could subset by districts and only remove those that are problematic / exessive 
-# Some overestimations in TN in 2001 (n=)
-aqua_salinity_surge_2001 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-table(aqua_salinity_surge_2001$Aqua_perc, aqua_salinity_surge_2001$district_code)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "TN"] <- NA
-
-
-# Some overestimations in AP in 2001 (n=5139)
-aqua_salinity_surge_2001 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP" & !is.na(aqua_salinity_surge$Aqua_perc), ]
-summary(aqua_salinity_surge_2001$Aqua_perc)
-
-aqua_salinity_surge$Aqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
-summary(aqua_salinity_surge$Aqua_perc)
-
-aqua_salinity_surge$DryAqua_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
-aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year == 2001 & aqua_salinity_surge$state_code == "AP"] <- NA
-
-
-
-# Also test 2011 (aqua areas seem very high)
-aqua_salinity_surge_2011 <- aqua_salinity_surge[aqua_salinity_surge$Year == 2011 & !is.na(aqua_salinity_surge$Aqua_perc), ]
-# Number of observations (29200 or about 3%)
-# check how many from each state and district 
-table(aqua_salinity_surge_2011$state_code, aqua_salinity_surge_2011$district_code)
-# Almost all districts are in, so leaving it in
-
-
-
+#------------------------
 
 # Calculate % change in aquaculture, dry aquaculture and salinity from previous year 
+safe_div <- function(numerator, denominator, threshold = 1) {
+  case_when(
+    is.na(denominator) ~ NA_real_,
+    abs(denominator) < threshold ~ NA_real_,  # too small to be reliable
+    TRUE ~ (numerator / denominator) * 100
+  )
+}
+
 aqua_salinity_surge <- aqua_salinity_surge %>%
   mutate(
     Year = as.integer(Year),
-    across(c(Aqua_ha, DryAqua_ha, Saline_ha), as.numeric)
+    across(c(Aqua_perc, DryAqua_perc, Saline_perc), as.numeric)
   ) %>%
   arrange(UniqueID, Year) %>%
   group_by(UniqueID) %>%
-  # Join the previous year's value manually for each metric
   mutate(
     prev_year = Year - 1,
-    prev_aqua = Aqua_ha[match(prev_year, Year)],
-    prev_dryaqua = DryAqua_ha[match(prev_year, Year)],
-    prev_saline = Saline_ha[match(prev_year, Year)],
+    prev_aqua = Aqua_perc[match(prev_year, Year)],
+    prev_dryaqua = DryAqua_perc[match(prev_year, Year)],
+    prev_saline = Saline_perc[match(prev_year, Year)],
     
-    pct_change_aqua = case_when(
-      is.na(prev_aqua) ~ NA_real_,
-      prev_aqua == 0 & Aqua_ha == 0 ~ 0,
-      prev_aqua == 0 & Aqua_ha != 0 ~ NA_real_,
-      TRUE ~ ((Aqua_ha - prev_aqua) / prev_aqua) * 100
-    ),
-    pct_change_dryaqua = case_when(
-      is.na(prev_dryaqua) ~ NA_real_,
-      prev_dryaqua == 0 & DryAqua_ha == 0 ~ 0,
-      prev_dryaqua == 0 & DryAqua_ha != 0 ~ NA_real_,
-      TRUE ~ ((DryAqua_ha - prev_dryaqua) / prev_dryaqua) * 100
-    ),
-    pct_change_salinity = case_when(
-      is.na(prev_saline) ~ NA_real_,
-      prev_saline == 0 & Saline_ha == 0 ~ 0,
-      prev_saline == 0 & Saline_ha != 0 ~ NA_real_,
-      TRUE ~ ((Saline_ha - prev_saline) / prev_saline) * 100
-    ),
+    pct_change_aqua = safe_div(Aqua_perc - prev_aqua, prev_aqua),
+    pct_change_dryaqua = safe_div(DryAqua_perc - prev_dryaqua, prev_dryaqua),
+    pct_change_salinity = safe_div(Saline_perc - prev_saline, prev_saline),
     
-    # Smooth percentage change using a sliding average
     smooth_pct_change_aqua_3 = slide_dbl(pct_change_aqua, ~mean(.x, na.rm = TRUE), .before = 2, .complete = TRUE),
     smooth_pct_change_aqua_5 = slide_dbl(pct_change_aqua, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE),
-  
+    
     smooth_pct_change_saline_3 = slide_dbl(pct_change_salinity, ~mean(.x, na.rm = TRUE), .before = 2, .complete = TRUE),
     smooth_pct_change_saline_5 = slide_dbl(pct_change_salinity, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)
-    
-    
-    ) %>%
+  ) %>%
   ungroup()
 
-table(aqua_salinity_surge$pct_change_aqua)
 summary(aqua_salinity_surge$pct_change_aqua)
-
-table(aqua_salinity_surge$pct_change_dryaqua)
 summary(aqua_salinity_surge$pct_change_dryaqua)
-
-table(aqua_salinity_surge$pct_change_salinity)
 summary(aqua_salinity_surge$pct_change_salinity)
 
+
+
+aqua_salinity_surge$State <- aqua_salinity_surge$state_code
+aqua_salinity_surge$District <- aqua_salinity_surge$district_code
 
 # Add a flag for villages showing erratic changes 
 # Step 1: Flag rows with large jump
@@ -559,7 +1391,7 @@ village_flags <- aqua_salinity_surge %>%
 
 table(aqua_salinity_surge$flag_large_jump, aqua_salinity_surge$Year, aqua_salinity_surge$State)
 
-# Frequency by district (if available)
+# Frequency by district
 table(village_flags$State, village_flags$District)
 
 
@@ -598,9 +1430,9 @@ aqua_salinity_surge$Saline <- ifelse(aqua_salinity_surge$Saline_perc_norm >= med
 # Aquaculture 
 lm_discont <- lm(Aqua_perc ~ Year + I(Year >= 2013), data = aqua_salinity_surge)
 summary(lm_discont)
-# Interpretation: A statistically significant but very small upward trend over time in aquaculture land share (0.0034 percentage point per year).
+# Interpretation: A statistically significant but very small upward trend over time in aquaculture land share (0.023 percentage point per year).
 # The coefficient for the sensor break (post-2012) is small and not statistically significant. That means: There is no evidence that aquaculture values jump discontinuously at 2013.
-# R-squared: ~0.00006 (negligible): The model explains almost none of the variation in Aqua_perc. This is expected, because you're only modeling it with year and a sensor-break dummy — no real predictors yet (like salinity or storm).
+# R-squared: ~0.0045 (negligible): The model explains almost none of the variation in Aqua_perc. This is expected, because you're only modeling it with year and a sensor-break dummy — no real predictors yet (like salinity or storm).
 # Aquaculture does not have a discontinuity at 2013. 
 
 
@@ -622,21 +1454,24 @@ aqua_salinity_surge <- aqua_salinity_surge %>%
 
 head(aqua_salinity_surge)
 
-aqua_salinity_surge$State <- aqua_salinity_surge$state_code
-aqua_salinity_surge$District <- aqua_salinity_surge$district_code
 
-# Create a variable for perisistent salinity (5 year)
+
+# Create 5 year salinity variable
 aqua_salinity_surge <- aqua_salinity_surge %>%
+  mutate(Year = as.numeric(Year)) %>%  # Ensure Year is numeric
+  arrange(UniqueID, Year) %>%
   group_by(UniqueID) %>%
-  arrange(Year) %>%
+  complete(Year = full_seq(Year, 1)) %>%  # Ensure continuous years for each village
   mutate(
-    Salinity_t1 = lag(Saline_perc_norm, 1),
-    Salinity_t2 = lag(Saline_perc_norm, 2),
-    Salinity_t3 = lag(Saline_perc_norm, 3),
-    Salinity_t4 = lag(Saline_perc_norm, 4),
-    Salinity_t5 = lag(Saline_perc_norm, 5),
-    Avg_Salinity_Last5 = rowMeans(cbind(Salinity_t1, Salinity_t2, Salinity_t3, Salinity_t4, Salinity_t5), na.rm = TRUE)
-  )
+    avg_salinity_5yr = rollapply(Saline_perc_norm, 
+                                 width = 5, 
+                                 FUN = mean, 
+                                 fill = NA, 
+                                 align = "right", 
+                                 na.rm = TRUE, 
+                                 partial = TRUE)  # Allow smaller windows when data is missing
+  ) %>%
+  ungroup()
 
 # Create lag variables for aquaculture and salinity 
 aqua_salinity_surge <- aqua_salinity_surge %>%
@@ -652,8 +1487,8 @@ head(aqua_salinity_surge)
 # Clean database and save
 # ________________________________________________________________________
 
-aqua_salinity_surge <- aqua_salinity_surge %>% select(Row_no, UniqueID, Year, State, District, total_area_ha, NEAR_DIST, Sea_Dist, DEM_avg, Aqua_ha, DryAqua_ha, Saline_ha, Aqua_perc, DryAqua_perc, Saline_perc_norm, Avg_Salinity_Last5, Lag_Aqua, Lag_Saline, pct_change_aqua, pct_change_dryaqua, pct_change_salinity, smooth_pct_change_aqua_3, smooth_pct_change_aqua_5, smooth_pct_change_saline_3, smooth_pct_change_saline_5, flag_large_jump, postSurge, Saline, Saline_Storm_Category, 
-                                                      agriculture_area_ha, agriculture_percent, urban_area_ha, urban_percent, TRU, No_HH, TOT_P, TOT_M, TOT_F, P_LIT, M_LIT, F_LIT, P_ILL, M_ILL, F_ILL, TOT_WORK_P,TOT_WORK_M, TOT_WORK_F, MAINWORK_P, MAINWORK_M, MAINWORK_F, MARGWORK_P, MARGWORK_M,
+aqua_salinity_surge <- aqua_salinity_surge %>% select(Row_no, UniqueID, Year, State, District, total_area_ha, first_surge_year, postSurge, Aqua_ha, DryAqua_ha, Saline_ha, Aqua_perc, DryAqua_perc, Saline_perc_norm, avg_salinity_5yr, Lag_Aqua, Lag_Saline, pct_change_aqua, pct_change_dryaqua, pct_change_salinity, smooth_pct_change_aqua_3, smooth_pct_change_aqua_5, smooth_pct_change_saline_3, smooth_pct_change_saline_5, flag_large_jump, Saline, Saline_Storm_Category, 
+                                                      NEAR_DIST, Sea_Dist, DEM_avg, agriculture_area_ha, agriculture_percent, urban_area_ha, urban_percent, TRU, No_HH, TOT_P, TOT_M, TOT_F, P_LIT, M_LIT, F_LIT, P_ILL, M_ILL, F_ILL, TOT_WORK_P,TOT_WORK_M, TOT_WORK_F, MAINWORK_P, MAINWORK_M, MAINWORK_F, MARGWORK_P, MARGWORK_M,
                                                       MARGWORK_F, SC_P, SC_M,SC_F, ST_P, ST_M, ST_F, TOT_IRR,UN_IRR,CULT_WASTE,VHCF_NDMA)
 head(aqua_salinity_surge)
 

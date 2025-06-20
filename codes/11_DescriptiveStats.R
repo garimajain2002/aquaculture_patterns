@@ -108,11 +108,12 @@ ggsave("outputs/AquaTrends_1990-25_byState.png", width = 14, height = 6, dpi = 3
 df$district_code <- paste(df$State, df$District, sep = "_")
 
 # Replace these with your actual district codes
-od_districts <- c("OD_4", "OD_5")
+od_districts <- c("OD_4", "OD_6")
 ap_districts <- c("AP_6", "AP_1")
 tn_districts <- c("TN_5", "TN_6")
 
-selected_districts <- c(tn_districts)
+# Select one state at a time
+selected_districts <- c(ap_districts)
 
 df_selected <- df %>% filter(district_code %in% selected_districts)
 
@@ -133,9 +134,9 @@ ggplot(yearly_dist_summary, aes(x = Year, y = mean_aquaculture, color = district
   labs(title = "Average Aquaculture Percentage Points by Year for select Districts",
        x = "Year", y = "Average Aquaculture (%)") +
   scale_x_continuous(breaks = seq(min(yearly_state_summary$Year), max(yearly_state_summary$Year), by = 1)) +
-  scale_color_manual(values = c("TN_5" = "blue", "TN_6" = "orange")) +  # <-- manually define colors here
+  scale_color_manual(values = c("AP_6" = "blue", "AP_1" = "orange")) +  # <-- manually define colors here for each district pair
   theme_minimal()
-ggsave("outputs/AquaTrends_1990-25_SelectDist_TN.png", width = 14, height = 6, dpi = 300)
+ggsave("outputs/AquaTrends_1990-25_SelectDist_AP.png", width = 14, height = 6, dpi = 300)
 
 
 

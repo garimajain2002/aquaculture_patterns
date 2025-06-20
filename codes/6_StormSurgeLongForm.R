@@ -5,6 +5,7 @@ library(sf)
 library(dplyr)
 library(tidyr)
 library(readr)
+library(ggplot2)
 
 getwd() 
 
@@ -15,6 +16,9 @@ district_codes <- list(
   AP = 1:9,
   TN = 1:12
 )
+
+# !!! Does not include tsunami affected villages yet 
+
 
 # Define surge mapping
 surge_mapping <- list(
@@ -179,10 +183,13 @@ surge <- surge %>%
 
 head(surge)
 
+#----------------------
+# Add Tsunami data
+#----------------------
 
-#_______________________
+#----------------------
 # Long form Conversion
-#_______________________
+#----------------------
 
 villageYears <- read.csv("data/All_villageYears.csv")
 
@@ -213,15 +220,70 @@ villageYears <- villageYears %>%
       year < first_surge_year ~ 0,
       TRUE ~ 1
     )
-  ) %>%
-  # Remove the temporary column
-  select(-first_surge_year)
+  )
 
 head(villageYears)
 
-#_______________________
+table(villageYears$first_surge_year)
+
+#----------------------
+# Graph the trend
+#----------------------
+
+# Cumulative
+# Filter rows with a known first surge year
+surge_trend <- villageYears %>%
+  filter(!is.na(first_surge_year)) %>%
+  distinct(UniqueID, first_surge_year) %>%  # Ensure one entry per village
+  group_by(first_surge_year) %>%
+  summarize(new_affected_villages = n()) %>%
+  arrange(first_surge_year) %>%
+  mutate(cumulative_villages = cumsum(new_affected_villages))
+
+# Plot the cumulative number of affected villages over time
+ggplot(surge_trend, aes(x = first_surge_year, y = cumulative_villages)) +
+  geom_line(color = "steelblue", size = 1.2) +
+  geom_point(color = "darkred") +
+  scale_x_continuous(breaks = seq(1960, 2025, 5)) +
+  labs(
+    title = "Cumulative Number of Villages Affected by Storm Surges",
+    x = "Year",
+    y = "Cumulative Number of Villages"
+  ) +
+  theme_minimal()
+
+ggsave("outputs/StormAffectedVillagesTrend_1964-2011.png", width = 14, height = 6, dpi = 300)
+
+
+# By state
+# Prepare cumulative surge trend by state
+surge_trend_by_state <- villageYears %>%
+  filter(!is.na(first_surge_year)) %>%
+  distinct(UniqueID, state_code, first_surge_year) %>%
+  group_by(state_code, first_surge_year) %>%
+  summarize(new_affected_villages = n(), .groups = "drop") %>%
+  arrange(state_code, first_surge_year) %>%
+  group_by(state_code) %>%
+  mutate(cumulative_villages = cumsum(new_affected_villages))
+
+# Plot cumulative surge trend by state
+ggplot(surge_trend_by_state, aes(x = first_surge_year, y = cumulative_villages, color = state_code)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = seq(1960, 2025, 5)) +
+  labs(
+    title = "Cumulative Number of Villages Affected by Storm Surges by State",
+    x = "Year",
+    y = "Cumulative Number of Villages",
+    color = "State"
+  ) +
+  theme_minimal()
+ggsave("outputs/StormAffectedVillagesTrend_ByState_1964-2011.png", width = 14, height = 6, dpi = 300)
+
+
+#----------------------
 # Export file
-#_______________________
+#----------------------
 
 # Write to CSV
 write_csv(villageYears, "outputs/master_surge_dataset.csv")
