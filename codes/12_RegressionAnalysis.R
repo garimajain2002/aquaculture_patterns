@@ -10,6 +10,7 @@
 # This script analyzes the relationship between aquaculture land change, storm surges, salinity, and other socio-environmental factors
 
 
+
 # ---------------------------------------
 # DATA AND PREP
 # ---------------------------------------
@@ -25,8 +26,11 @@ library(tidyverse)
 library(modelsummary) # for summary tables
 library(fixest)    # for fixed effects with feols()
 library(zoo) #for rollmean() for calculating smoother percentage changes over 3-5 years
-library(slider)getwd()
+library(slider)
 library(margins) # For visualizing 
+library(sf)
+library(spdep) #for conley spatial standard error 
+library(spatialreg) #for conley spatial standard error 
 
 
 
@@ -35,6 +39,8 @@ data <- read.csv(unz("outputs/aqua_salinity_surge_1990-2025.zip",
 
 head(data)
 summary(data)
+
+
 
 # Check for missing values
 missing_values <- colSums(is.na(data))
@@ -53,6 +59,15 @@ summary(data$avg_salinity_5yr)
 # Set TN as a reference state
 data$State <- relevel(factor(data$State), ref = "TN")
 
+head(data)
+# Add a flag variable for any key missing variables 
+# If any of these is NA, make flag = NA : Aqua_perc , postSurge , avg_salinity_5yr , Lag_Aqua
+
+data$flag <- ifelse(rowSums(is.na(data[c("Aqua_perc", "postSurge", "avg_salinity_5yr", "Lag_Aqua")])) > 0, NA, 0)
+
+table(data$flag, useNA = "always")  # Shows count of flagged vs non-flagged rows
+sum(is.na(data$flag))   # Total number of rows with missing variables
+
 
 # ---------------------------------------
 # REGRESSION MODELS : BASIC RELATIONSHIPS
@@ -60,68 +75,125 @@ data$State <- relevel(factor(data$State), ref = "TN")
 # Two-way fixed effect models 
 
 # SET A : Without and with controls 
-# 1. Y = Salinity, X = surge (without controls except time and unit, with controls)
-regA1_1 <- feols(avg_salinity_5yr ~ postSurge | Year, 
+# 1. Y = Salinity, X = surge (without controls except time and unit)
+regA1_1 <- feols(avg_salinity_5yr ~ postSurge + flag | Year, 
                 data = data, vcov = ~UniqueID)
 summary(regA1_1)
 
-regA1_2 <- feols(avg_salinity_5yr ~ postSurge | UniqueID + Year, 
+regA1_2 <- feols(avg_salinity_5yr ~ postSurge + flag | UniqueID + Year, 
                 data = data, vcov = ~UniqueID)
 summary(regA1_2)
 
-# When comparing across places, Villages in post-surge years have, on average, 0.608 units higher 5-year average salinity, compared to others, controlling only for time trends. 
-# When comparing villages to themselves overtime, the relationship of salinity with surges is still positive and significant, although smaller. 
-# This suggests that while places that are affected by surges have a higher baseline salinity (i.e. are more likely to be saline), but exprience relatively more salinity after being affected by storms. 
+# Time FE: 
+# Holding the year constant, when comparing across places, Villages in post-surge years have, on average, 0.608 units higher 5-year average salinity, compared to not affected places. 
+# Note that this is a pooled estimate across all villages without controlling for baseline salinity differences between villages.
+# This only explains 10% of the variation, and RMSE = 0.8 implies prediction errors are fairly large. 
+
+# Village + Time FE
+# This controls for any time-invariant village-level characteristics, like soil type, geographical location with respect to the sea, persistent farming practices, etc.
+# When comparing villages to themselves overtime, the relationship of salinity with surges reverses, that is within a given village, salinity is lower by 0.066 units in post-surge periods compared to pre-surge periods.
+# Within R² = 0.00022: only a tiny portion of within-village variation in salinity is explained by postSurge.
+# This suggests that there maybe systematic differences between places that are affected vs not affected by storms. Those affected by storms are likley to have a higher salinity baseline. 
+# while places that are affected by surges have a higher baseline salinity (i.e. are more likely to be saline), they experience relatively less salinity after being affected by storms. 
+
+# The flip suggests that areas that get surges more often may already have higher salinity. The negative effect may indicate a temporary leaching/flushing effect or behavioral change (e.g., fallowing land post-surge) or higher soil moisture
+
 
 
 # 2. Y = Aquaculture, X = Surge (without controls except time and unit, with controls)
-regA2_1 <- feols(Aqua_perc ~ postSurge | Year, 
+regA2_1 <- feols(Aqua_perc ~ postSurge + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA2_1)
 
-regA2_2 <- feols(Aqua_perc ~ postSurge | UniqueID + Year, 
+regA2_2 <- feols(Aqua_perc ~ postSurge + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA2_2)
 
-# When comparing across places, places affected by surges are highly likely to have higher aquaculture. 
-# but when comparing within places, Within the same village, aquaculture increases by ~0.16 percentage points after a surge.
+# Time FE: 
+# Across all villages (this includes both within- and between-village variation), in years after a surge, the average aquaculture share is nearly 1 percentage point higher, compared to pre-surge years.
+# Time + Villge FE: 
+# Within a village over time, aquaculture increases by ~0.23 percentage points after a surge, holding constant all time-invariant village characteristics and year effects.
 # This is accounting for place-based time-invariant village characteristics and time shocks that affect all villages (policies, inflation, prices, etc.), and therefore likely a causal effect.  
+
+# After accounting for time-invariant differences across villages, storm surges are still positively associated with more aquaculture, but the effect size drops a lot — from 0.92% to 0.23%.
+# This pattern is consistent with adaptation behavior: Surge hits → People shift toward aquaculture
+# But the very low within R² suggests surge is only one small part of the story — most of the variation in aquaculture adoption is driven by other factors (e.g., market access, policy, infrastructure, long-run salinity trends, landholding).
+
 
 
 # 3. Y = Aquaculture, X = Salinity in previous period (without controls except time and unit, with controls)
-regA3_1 <- feols(Aqua_perc ~ avg_salinity_5yr | Year, 
+regA3_1 <- feols(Aqua_perc ~ avg_salinity_5yr + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA3_1)
 
-regA3_2 <- feols(Aqua_perc ~ avg_salinity_5yr | UniqueID + Year, 
+regA3_2 <- feols(Aqua_perc ~ avg_salinity_5yr + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA3_2)
+
+# Time FE: 
+# 1-unit increase in 5-year salinity is associated with a 0.96 percentage point increase in aquaculture share across villages.
+# higher salinity is correlated with more aquaculture at the aggregate level, but doesn't control for village-specific unobservables.
+
+# Time and village FE: 
+# 1-unit increase in salinity over the past 5 years is associated with a 0.2 percentage point increase in aquaculture share within the same village.
+# Increasing salinity leads to relatively small but significant aquaculture expansion over time, within villages.
+
+# These models provide evidence for adaptive behavior: Villages expand aquaculture in response to worsening salinity.
+# The fact that the association holds even after controlling for fixed village characteristics, strengthens the interpretation that salinity increases precede aquaculture growth
+# Although the effect size is modest => effect size is modest, and most of the change in aquaculture is driven by other time-varying factors.
 
 
 
 # 4. Y = Aquaculture, X = Aqua time - 1 (without controls except time and unit, with controls)
-regA4_1 <- feols(Aqua_perc ~ Lag_Aqua | Year, 
+# to assess persistence or path dependence in aquaculture land use decisions — whether villages that adopt aquaculture continue doing so.
+
+regA4_1 <- feols(Aqua_perc ~ Lag_Aqua + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA4_1)
 
-regA4_2 <- feols(Aqua_perc ~ Lag_Aqua | UniqueID + Year, 
+regA4_2 <- feols(Aqua_perc ~ Lag_Aqua + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA4_2)
 
 # Aquaculture in the previous period remains consistently high and significant predictor or aquaculture in the current period
 
+# Time FE: 
+# One percentage point increase in aquaculture in year t–1 is associated with a 0.87 percentage point increase in year t. This implies very strong persistence of aquaculture from year to year 
+# Nearly all the explanatory power comes from within-village year-to-year changes.
+
+# Time and Village FE: 
+# within the same village, aquaculture in year t is strongly predicted by aquaculture in year t–1 — a 0.64 percentage point increase per 1 unit aquaculture in the previous year.
+# Within R² = 0.38: even after accounting for all fixed effects, the lag explains 38% of within-village variation, which is substantial.
+
+# This suggests path dependence in aquaculture land use even after accounting for permanent village traits (e.g., location, infrastructure, soil).
+# Aquaculture is highly persistent — villages that adopted it in the past tend to maintain or expand it.
+# This persistence holds even when controlling for time-invariant village characteristics, indicating path dependency and potential lock-in once aquaculture is adopted.
+# This may reflect: Economic investments (e.g., ponds, labor skills), Institutional or policy factors, Environmental feedbacks (e.g., increased salinity reinforcing suitability)
+
+
 
 
 # 5. Y = Aquaculture, X = Surge, X = Salinity, X = Aqua-1 (without controls except time and unit, with controls)
-regA5_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua | Year, 
+regA5_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA5_1)
 
-regA5_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua | UniqueID + Year, 
+regA5_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regA5_2)
 
 # When including all predictors, they all seem to have a strong and significant relationship with aquaculture, both within and across comparisons. 
+# Time FE: 
+# Past aquaculture has strong persistence effect: Strong persistence — a 1% point increase in aquaculture last year is associated with 0.87% point increase this year.
+# Past salinity is associated with an increase in aquaculture: +0.15% point increase in aquaculture.
+# Surge years are associated with 0.09% point higher aquaculture, on average.
+
+# Time and Village FE: 
+# Persistence of aquaculture remains strong even after accounting for village-level confounders - 1 unit in past aquaculture accounts for 0.638 unit increase in future aquaculture 
+# Surge is associated with a +0.12% point increase in aquaculture.
+# Salinity increases are positively associated with +0.07% point increase in aquaculture.
+# These results provide robust evidence for an adaptive feedback loop: Storm surge => Salinity increases => Aquaculture increases => Persistence over time
+
 
 
 models <- list()
@@ -145,16 +217,36 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 
 
 
-# Set B : With interactions 
+
+
+
+# Set B : With salinity and surge interactions 
+# To assess if there is a moderating effect of surge on the salinity and aquaculture relationship.
 # 1. Y = Aquaculture, X = Surge, X = Salinity, X = Aqua-1 
 
-regB1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr | Year, 
+regB1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regB1_1)
 
-regB1_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr | UniqueID + Year, 
+regB1_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regB1_2)
+
+# Time FE
+# In non-saline areas, a surge year increases aquaculture by ~0.11% point.
+# In non-surge years, a 1-unit increase in salinity increases aquaculture by ~0.24% point.
+# After a surge, the effect of salinity on aquaculture is lower by 0.16 → Total effect of salinity = 0.24 – 0.16 = ~0.08.
+# Salinity is positively associated with aquaculture in normal years.
+# After a surge, the strength of that association weakens — perhaps because surge acts as a shock to the existing aquaculture practices or immediate recovery efforts shift behavior.
+
+# Time and village FE: 
+# Surges increase aquaculture in low-salinity areas - In villages with zero salinity, surges are associated with a +0.12% point increase in aquaculture.
+# Salinity alone does not predict aquaculture in normal years (not significant) - In non-surge years, salinity has a small and statistically insignificant effect on aquaculture.
+# Surges amplify salinity-driven aquaculture expansion - After a surge, the effect of salinity increases by ~0.09% point per unit of salinity.
+# In normal years, salinity does not have an impact on aquaculture uptake, however, after a surge, salinity becomes a stronger driver of aquaculture.
+# This points to interactive adaptation: when a surge occurs in already saline areas, people are more likely to expand aquaculture.
+# In villages already facing salinity, storm surges amplify the move toward aquaculture.
+# It is not just the surge or salinity alone, but salinity post-surge that accelerates aquaculture expansion.
 
 
 models <- list()
@@ -165,47 +257,64 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 
 
 
+models <- list()
+models[['Salinity (1)']] <- regA1_2
+
+models[['Aquaculture (2)']] <- regA3_2
+
+models[['Aquaculture (3)']] <- regA2_2
+
+models[['Aquaculture (4)']] <- regA4_2
+
+models[['Aquaculture (All)']] <- regA5_2
+
+models[['Aquaculture (Interaction)']] <- regB1_2
+
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+
+
 
 # Set C : State variation
 
 # 1. Y = Salinity, X = surge (without controls except time and unit, with controls)
-regC1_1 <- feols(avg_salinity_5yr ~ postSurge + postSurge * State | Year, 
+regC1_1 <- feols(avg_salinity_5yr ~ postSurge + postSurge * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC1_1)
 
-regC1_2 <- feols(avg_salinity_5yr ~ postSurge + postSurge * State | UniqueID + Year, 
+regC1_2 <- feols(avg_salinity_5yr ~ postSurge + postSurge * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC1_2)
 
 
 # 2. Y = Aquaculture, X = Surge (without controls except time and unit, with controls)
-regC2_1 <- feols(Aqua_perc ~ postSurge + postSurge * State | Year, 
+regC2_1 <- feols(Aqua_perc ~ postSurge + postSurge * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC2_1)
 
-regC2_2 <- feols(Aqua_perc ~ postSurge + postSurge * State | UniqueID + Year, 
+regC2_2 <- feols(Aqua_perc ~ postSurge + postSurge * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC2_2)
 
 
 
 # 3. Y = Aquaculture, X = Salinity in previous period (without controls except time and unit, with controls)
-regC3_1 <- feols(Aqua_perc ~ avg_salinity_5yr + avg_salinity_5yr * State | Year, 
+regC3_1 <- feols(Aqua_perc ~ avg_salinity_5yr + avg_salinity_5yr * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC3_1)
 
-regC3_2 <- feols(Aqua_perc ~ avg_salinity_5yr + avg_salinity_5yr * State | UniqueID + Year, 
+regC3_2 <- feols(Aqua_perc ~ avg_salinity_5yr + avg_salinity_5yr * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC3_2)
 
 
 
 # 4. Y = Aquaculture, X = Aqua time - 1 (without controls except time and unit, with controls)
-regC4_1 <- feols(Aqua_perc ~ Lag_Aqua + Lag_Aqua * State | Year, 
+regC4_1 <- feols(Aqua_perc ~ Lag_Aqua + Lag_Aqua * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC4_1)
 
-regC4_2 <- feols(Aqua_perc ~ Lag_Aqua + Lag_Aqua * State | UniqueID + Year, 
+regC4_2 <- feols(Aqua_perc ~ Lag_Aqua + Lag_Aqua * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regC4_2)
 
@@ -246,33 +355,72 @@ msummary(
 )
 
 
+models <- list()
+models[['Salinity']] <- regC1_2
+
+models[['Aquaculture (1)']] <- regC2_2
+
+models[['Aquaculture (2)']] <- regC3_2
+
+models[['Aquaculture (3)']] <- regC4_2
+
+msummary(
+  models,
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  gof_omit = c("BIC|AIC|RMSE|R2 Within Adj."),
+  coef_omit = c("(Intercept)"),
+  coef_map = c(
+    "postSurge" = "Post-Surge (TN)",
+    "postSurge:StateAP" = "Post-surge (AP wrt TN)", 
+    "postSurge:StateOD" = "Post-surge (OD wrt TN)",
+    "avg_salinity_5yr" = "Persisent Salinity (TN)",
+    "avg_salinity_5yr:StateAP" = "Persisent Salinity (AP wrt TN)",
+    "avg_salinity_5yr:StateOD" = "Persisent Salinity (OD wrt TN)",
+    "Lag_Aqua" = "AC in t-1 (TN)",
+    "Lag_Aqua:StateAP" = "AC in t-1 (AP wrt TN)",
+    "Lag_Aqua:StateOD" = "AC in t-1 (OD wrt TN)",
+    "StateAP" = "Baseline AP (wrt TN)",
+    "StateOD" = "Baseline OD (wrt TN)"
+  ),
+  filename = 'table.rtf'
+)
+
+
+
+
+
 # Set D : State variations and Interactions
 
 # 1. Y = Aquaculture, X = Surge, X = Salinity, X = Aqua-1 (with one interaction at a time)
-regD1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * State | Year, 
+regD1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_1)
 
-regD1_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * State | UniqueID + Year, 
+regD1_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_2)
 
-# There is a strong heterogeneity in surge responses across states. Storm surges strongly increase aquaculture in AP, weakly decrease it in OD, and modestly increase it in TN.
-# Once village-specific baselines are controlled, the surge effect in TN is strongest, smaller in AP, but extremely low in OD (0.012).
-# Cross-state differences persist, but magnitude and direction flip compared to model without FE.
+# There is a strong heterogeneity in surge responses across states. 
+# Storm surges strongly increase aquaculture in TN, modestly increase it in AP, but no significant surge impact on aquaculture in OD.
+# In Tamil Nadu, storm surges are associated with 1.61 point increase in aquaculture share.
+# In Andhra Pradesh, Net effect = +0.48
+# In Odisha, net effect is = ~0.01 (not statistically different from 0)
 
 
 
-regD1_3 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + avg_salinity_5yr * State | Year, 
+regD1_3 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + avg_salinity_5yr * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_3)
 
-regD1_4 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + avg_salinity_5yr * State | UniqueID + Year, 
+regD1_4 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + avg_salinity_5yr * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_4)
 
 # Comparing places across the data, in all states higher salinity is related with higher aquaculture, although AP seems to be most responsive to salinity and OD the least. 
 # Once unobserved village-level time invarying factors (such as dist or elevation from the sea), etc are controlled for, TN shows a small negative effect of salinity, whereas AP and OD show positive association. 
+# In TN, salinity is negatively associated with aquaculture within villages with 0.057 pp
+# In AP, salinity is associated with +0.185 pp increase in aquaculture
+# In OD, salinity is associated with +0.053 pp increase in aquaculture 
 
 
 models <- list()
@@ -306,12 +454,36 @@ msummary(
 # AP seems to be strategically adaptive to long-term salinity. 
 # OD shows least responsiveness to either shocks or stresses, likely due to infrastructure, policy or economic constraints. 
 
+models <- list()
+models[['Aquaculture (surge-effect)']] <- regD1_2
+models[['Aquaculture (salinity-effect)']] <- regD1_4
+
+msummary(
+  models,
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  gof_omit = c("BIC|AIC|RMSE|R2 Within Adj."),
+  coef_omit = c("(Intercept)"),
+  coef_map = c(
+    "postSurge" = "Post-Surge (TN or all)",
+    "postSurge:StateAP" = "Post-surge (AP wrt TN)", 
+    "postSurge:StateOD" = "Post-surge (OD wrt TN)",
+    "avg_salinity_5yr" = "Persisent Salinity (TN or all)",
+    "avg_salinity_5yr:StateAP" = "Persisent Salinity (AP wrt TN)",
+    "avg_salinity_5yr:StateOD" = "Persisent Salinity (OD wrt TN)",
+    "Lag_Aqua" = "AC in t-1 (TN)",
+    "Lag_Aqua:StateAP" = "AC in t-1 (AP wrt TN)",
+    "Lag_Aqua:StateOD" = "AC in t-1 (OD wrt TN)",
+    "StateAP" = "Baseline AP (wrt TN)",
+    "StateOD" = "Baseline OD (wrt TN)"
+  ),
+  filename = 'table.rtf'
+)
 
 
 
 # Set E : Three-way interactions and non-linearity 
 # Try triple interaction: 
-regE1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr * State | UniqueID + Year, 
+regE1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr * State + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
 summary(regE1_1)
 
@@ -323,7 +495,7 @@ summary(regE1_1)
 
 # Test for non-linear relationship with salinity 
 data_clean <- data %>% filter(!is.na(avg_salinity_5yr))
-regE1_2 <- feols(Aqua_perc ~ postSurge + poly(avg_salinity_5yr, 2) + Lag_Aqua + postSurge * poly(avg_salinity_5yr, 2) * State | UniqueID + Year, 
+regE1_2 <- feols(Aqua_perc ~ postSurge + poly(avg_salinity_5yr, 2) + Lag_Aqua + postSurge * poly(avg_salinity_5yr, 2) * State + flag | UniqueID + Year, 
                  data = data_clean, vcov = ~UniqueID)
 summary(regE1_2)
 
@@ -390,7 +562,7 @@ data <- data %>%
   ungroup()
 
 
-# Restrict to villages only with aqua 
+# If need to restrict to villages only with aqua 
 villages_with_aqua <- data %>%
   group_by(UniqueID) %>%
   summarize(has_aqua = any(!is.na(Aqua_perc) & Aqua_perc > 0)) %>%
@@ -401,20 +573,21 @@ data_filtered <- data %>%
   filter(UniqueID %in% villages_with_aqua)
 
 
+
 # 1. Y = Current Salinity, X = Lag Aqua (without controls except time and unit, with controls)
 regF1_1 <- feols(Saline_perc_norm  ~ Lag_Aqua | UniqueID + Year, 
-                 data = data_filtered, vcov = ~UniqueID)
+                 data = data, vcov = ~UniqueID)
 summary(regF1_1)
 
 regF1_2 <- feols(Saline_perc_norm  ~ Lag_Aqua + postSurge | UniqueID + Year, 
-                 data = data_filtered, vcov = ~UniqueID)
+                 data = data, vcov = ~UniqueID)
 summary(regF1_2)
 
 # Adding postSurge has no impact on the model or the coefficient of past aquaculture 
 
 models <- list()
-models[['Salinity (Village+Time FE)']] <- regF1_1
-models[['Salinity (All controls+Village+Time FE)']] <- regF1_2
+models[['Salinity (1)']] <- regF1_1
+models[['Salinity (2)']] <- regF1_2
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 
@@ -422,18 +595,18 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 
 # 2. Y = Future avg salinity, X = Current Aqua
 regF2_1 <- feols(future_avg_salinity ~ Aqua_perc | UniqueID + Year, 
-                 vcov = ~UniqueID, data = data_filtered)
+                 vcov = ~UniqueID, data = data)
 
 summary(regF2_1)
 
 regF2_2 <- feols(future_avg_salinity ~ Aqua_perc + postSurge | UniqueID + Year, 
-                 vcov = ~UniqueID, data = data_filtered)
+                 vcov = ~UniqueID, data = data)
 
 summary(regF2_2)
 
 models <- list()
-models[['Future Salinity (Village+Time FE)']] <- regF2_1
-models[['Future Salinity (All controls+Village+Time FE)']] <- regF2_2
+models[['Future Salinity (1)']] <- regF2_1
+models[['Future Salinity (2)']] <- regF2_2
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 
@@ -445,18 +618,18 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 
 # 3. By State
 regF3_1 <- feols(Saline_perc_norm  ~ Lag_Aqua * State | UniqueID + Year, 
-                 data = data_filtered, vcov = ~UniqueID)
+                 data = data, vcov = ~UniqueID)
 summary(regF3_1)
 
 regF3_2 <- feols(Saline_perc_norm  ~ Lag_Aqua * State + postSurge | UniqueID + Year, 
-                 data = data_filtered, vcov = ~UniqueID)
+                 data = data, vcov = ~UniqueID)
 summary(regF3_2)
 
 # Adding postSurge has no impact on the model or the coefficient of past aquaculture 
 
 models <- list()
-models[['Salinity (Village+Time FE)']] <- regF3_1
-models[['Salinity (All controls+Village+Time FE)']] <- regF3_2
+models[['Salinity (1)']] <- regF3_1
+models[['Salinity (2)']] <- regF3_2
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 # Potential explanations for decreased salinity in Tn with increased aquaculture, but increased salinity in OD and AP

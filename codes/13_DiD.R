@@ -20,7 +20,7 @@ library(did)
 
 getwd()
 
-df <- read.csv(unz("outputs/aqua_salinity_surge_1990-2025.zip", 
+df <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip", 
                      "aqua_salinity_surge_1990-2025.csv"))
 
 # Make TN reference state
@@ -32,12 +32,20 @@ df <- df %>%
   mutate(treated = any(postSurge == 1)) %>%
   ungroup()
 
+# Add a flag variable for any key missing variables 
+# If any of these is NA, make flag = NA : Aqua_perc , postSurge , avg_salinity_5yr , Lag_Aqua
+df$flag <- ifelse(rowSums(is.na(df[c("Aqua_perc", "postSurge", "avg_salinity_5yr", "Lag_Aqua")])) > 0, NA, 0)
+
+table(df$flag, useNA = "always")  # Shows count of flagged vs non-flagged rows
+sum(is.na(df$flag))   # Total number of rows with missing variables
+
+
 # --------------------------------
 # Dif-in-Dif model (All+By States)
 # --------------------------------
 
 did_model <- feols(
-  Aqua_perc ~ avg_salinity_5yr + i(postSurge, treated, ref = 0) | UniqueID + Year,
+  Aqua_perc ~ avg_salinity_5yr + i(postSurge, treated, ref = 0) + flag | UniqueID + Year,
   data = df
 )
 summary(did_model)
@@ -47,11 +55,28 @@ models[['Diff-in-Diff']] <- did_model
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 # Interpretation: 
-# Each 1% increase in avg. salinity over past 5 years is associated with a 0.212pp increase in aquaculture share. 
-# Villages affected by surge show a +0.148% increase in aquaculture after the surge compared to unaffected villages. This is statistically significant at 95% CI (p < 0.001)
+# Each 1% increase in avg. salinity over past 5 years is associated with a 0.201 pp increase in aquaculture share. 
+# Villages affected by surge show a +0.244 increase in aquaculture after the surge compared to unaffected villages. This is statistically significant at 99% CI (p < 0.01)
 
 # This supports a causal interpretation: storm surges as well as salinity push aquaculture expansion.
 # The effect (+0.148 pp) may seem modest, but important if aggregated across space and time. 
+
+
+# DiD with lag_aqua also (reflecting the same set as the main panel regression models)
+did_model_2 <- feols(
+  Aqua_perc ~ i(postSurge, treated, ref = 0) + avg_salinity_5yr + Lag_Aqua + flag | UniqueID + Year,
+  data = df
+)
+summary(did_model_2)
+
+models <- list()
+models[['Diff-in-Diff']] <- did_model_2
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+# Interpretation: 
+# Villages affected by surge show a +0.121 increase in aquaculture after the surge compared to unaffected villages.
+# Each 1% increase in avg. salinity over past 5 years is associated with a 0.068 pp increase in aquaculture share. 
+# These results are about the same as the regular regression model from earlier.  
 
 
 
@@ -60,7 +85,7 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 pooled_model <- feols(
   Aqua_perc ~ 
     avg_salinity_5yr * State + 
-    i(postSurge, treated, ref = 0) * State | 
+    i(postSurge, treated, ref = 0) * State + flag | 
     UniqueID + Year,
   cluster = ~UniqueID,
   data = df
@@ -72,8 +97,8 @@ models <- list()
 models[['Pooled Diff-in-Diff']] <- pooled_model
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
-# Effect of salinity : TN (baseline): -0.13 (salinity reduces aquaculture); AP: -0.13 + 0.69 = +0.56; OD: -0.13 + 0.30 = +0.17
-# Effect of surges: TN: Full effect = +3.35 pp (strong, positive, significant); AP: +0.61 pp (small, but significant); OD: Effect dropped due to collinearity — this likely means there's no variation left (e.g., no untreated control units or no surge timing variation within OD) once FE and other interactions are absorbed.
+# Effect of salinity : TN (baseline): -0.13 (salinity reduces aquaculture); AP: -0.13 + 0.62 = +0.49; OD: -0.13 + 0.29 = +0.16
+# Effect of surges: TN: Full effect = +3.35 pp (strong, positive, significant); AP: +1.02 pp; OD: Effect dropped due to collinearity — this likely means there's no variation left (e.g., no untreated control units or no surge timing variation within OD) once FE and other interactions are absorbed.
 # + State indicators are collinear with fixed effects 
 
 # Check variation in surge timing within OD 
@@ -144,7 +169,7 @@ df_1990 <- df_1990 %>%
 
 # Check for NAs in covariates before using 
 df_1990 %>%
-  select(Aqua_perc, Year, UniqueID, G,
+  select(Aqua_perc, Year, UniqueID, G, flag,
          NEAR_DIST, Saline_perc_norm, DEM_avg,
          agriculture_percent, urban_percent,
          TOT_WORK_P, TOT_P, MARGWORK_P) %>%
@@ -186,7 +211,7 @@ ggdid(out_OD)
 
 p <- ggdid(out_OD)
 
-ggsave("outputs/OD_event_study.jpg", plot = p, width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/OD_event_study.jpg", plot = p, width = 14, height = 6, dpi = 300)
 
 
 # ATT estimates 
@@ -223,7 +248,7 @@ p<- ggplot(att_df_clean, aes(x = event_time, y = estimate, color = period)) +
 
 plot(p) 
 
-ggsave("outputs/OD_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/OD_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
 
 
 
@@ -255,7 +280,7 @@ ggdid(out_AP)
 
 p <- ggdid(out_AP)
 
-ggsave("outputs/AP_event_study.jpg", plot = p, width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/AP_event_study.jpg", plot = p, width = 14, height = 6, dpi = 300)
 
 
 
@@ -292,7 +317,7 @@ p<- ggplot(att_df_clean, aes(x = event_time, y = estimate, color = period)) +
 
 plot(p) 
 
-ggsave("outputs/AP_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/AP_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
 
 
 
@@ -326,7 +351,7 @@ ggdid(out_TN)
 
 p <- ggdid(out_TN)
 
-ggsave("outputs/TN_event_study.jpg", plot = p, width = 14, height = 18, dpi = 300)
+ggsave("visuals/DiD/TN_event_study.jpg", plot = p, width = 14, height = 18, dpi = 300)
 
 # ATT estimates 
 summary(out_TN)
@@ -365,7 +390,7 @@ p<- ggplot(att_df_clean, aes(x = event_time, y = estimate, color = period)) +
 
 plot(p) 
 
-ggsave("outputs/TN_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/TN_event_study_alt.jpg", plot = p, width = 14, height = 6, dpi = 300)
 
 
 
@@ -443,7 +468,7 @@ ggplot(att_all_clean, aes(x = time, y = estimate, color = State)) +
        x = "Year", y = "ATT", color = "State") +
   theme_minimal(base_size = 14)
 
-ggsave("outputs/All_event_study.jpg", width = 14, height = 6, dpi = 300)
+ggsave("visuals/DiD/All_event_study.jpg", width = 14, height = 6, dpi = 300)
 
 
 

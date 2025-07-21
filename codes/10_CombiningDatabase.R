@@ -1426,6 +1426,10 @@ summary(aqua_salinity_surge$Saline_perc_norm)
 median_saline <- median(aqua_salinity_surge$Saline_perc_norm, na.rm = TRUE)
 aqua_salinity_surge$Saline <- ifelse(aqua_salinity_surge$Saline_perc_norm >= median_saline, 1, 0)
 
+table(aqua_salinity_surge$Saline, aqua_salinity_surge$Year)
+
+
+
 
 # Aquaculture 
 lm_discont <- lm(Aqua_perc ~ Year + I(Year >= 2013), data = aqua_salinity_surge)
@@ -1440,15 +1444,15 @@ summary(lm_discont)
 aqua_salinity_surge <- aqua_salinity_surge %>%
   mutate(
     Saline_Storm_Category = factor(case_when(
-      Saline == 1 & postSurge == 1 ~ "Flooded & High Saline",
-      Saline == 0 & postSurge == 1 ~ "Flooded & Low Saline",
-      Saline == 1 & postSurge == 0 ~ "Non-Flooded & High Saline",
-      Saline == 0 & postSurge == 0 ~ "Non-Flooded & Low Saline"
+      Saline == 1 & postSurge == 1 ~ "Surge & High Saline",
+      Saline == 0 & postSurge == 1 ~ "Surge & Low Saline",
+      Saline == 1 & postSurge == 0 ~ "Non-Surge & High Saline",
+      Saline == 0 & postSurge == 0 ~ "Non-Surge & Low Saline"
     ), levels = c(
-      "Flooded & High Saline",
-      "Non-Flooded & High Saline",
-      "Flooded & Low Saline",
-      "Non-Flooded & Low Saline"
+      "Surge & High Saline",
+      "Non-Surge & High Saline",
+      "Surge & Low Saline",
+      "Non-Surge & Low Saline"
     ))
   )
 

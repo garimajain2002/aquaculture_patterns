@@ -6,7 +6,7 @@ library(corrplot)
 
 getwd()
 
-df <- read.csv(unz("outputs/aqua_salinity_surge_1990-2025.zip", 
+df <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip", 
                    "aqua_salinity_surge_1990-2025.csv"))
 summary(df)
 
@@ -20,6 +20,14 @@ summary(df_near)
 df_vnear <- df %>%
   filter(Sea_Dist %in% c("Very Near"))
 summary(df_vnear)
+
+# Also create an additional one for villages only within 10km from the sea i.e. NEAR_DIST <10000
+summary(df$NEAR_DIST)
+
+df_10km <- df %>%
+  filter(NEAR_DIST <=10000)
+summary(df_10km)
+
 
 
 # ################ SUMMMARY STATS ##############
@@ -143,7 +151,7 @@ ggsave("outputs/AquaTrends_1990-25_SelectDist_AP.png", width = 14, height = 6, d
 
 
 
-# 2. Mean Aquaculture and Salinity by Storm Surge Status
+# 2. Mean Aquaculture and Salinity by Storm Surge Status and distance from the sea
 yearly_summary <- df %>%
   group_by(Year) %>%
   summarize(
@@ -249,7 +257,6 @@ ggsave("outputs/Stormwise_salinityTrends_1990-25_allVillages.png", width = 14, h
 
 
 # NEAR VILLAGES (<60 km from the sea) 
-
 # Summary stats for near and very near villages only 
 summary_stats <- df_near %>%
   group_by(Year) %>%
@@ -267,9 +274,6 @@ summary_stats <- df_near %>%
 print(summary_stats)
 # Finding: Overall trend shows increasing aquaculture and salinity in the near and very near villages over the decade
 
-
-
-# near villages (<60km ) Divide for storm affected and unaffected
 # Divide this for storm affected and unaffected
 yearly_summary <- df_near %>%
   group_by(Year) %>%
@@ -370,8 +374,8 @@ ggplot(yearly_summary, aes(x=factor(Year))) +
 ggsave("outputs/Stormwise_salinityTrends_1990-25_nearVillages.png", width = 14, height = 6, dpi = 300)
 
 
-# VERY NEAR VILLAGES (<30 km from the sea) 
 
+# VERY NEAR VILLAGES (<30 km from the sea) 
 # Summary stats for very near villages only 
 summary_stats <- df_vnear %>%
   group_by(Year) %>%
@@ -388,7 +392,6 @@ summary_stats <- df_vnear %>%
 
 print(summary_stats)
 # Finding: Overall trend shows increasing aquaculture and salinity in the near and very near villages over the decade
-
 
 
 # very near villages (<30km ) Divide for storm affected and unaffected
@@ -494,6 +497,136 @@ ggsave("outputs/Stormwise_salinityTrends_1990-25_verynearVillages.png", width = 
 
 
 
+
+
+# VERY VERY NEAR <10 km from the sea 
+# Summary stats for within 10km villages only 
+summary_stats <- df_10km %>%
+  group_by(Year) %>%
+  summarise(
+    mean_aqua = mean(Aqua_perc, na.rm = TRUE),
+    median_aqua = median(Aqua_perc, na.rm = TRUE),
+    min_aqua = min(Aqua_perc, na.rm = TRUE),
+    max_aqua = max(Aqua_perc, na.rm = TRUE),
+    mean_saline = mean(Saline_perc_norm, na.rm = TRUE),
+    median_saline = median(Saline_perc_norm, na.rm = TRUE),
+    min_saline = min(Saline_perc_norm, na.rm = TRUE),
+    max_saline = max(Saline_perc_norm, na.rm = TRUE)
+  )
+
+print(summary_stats)
+# Finding: Overall trend shows increasing aquaculture and salinity in the near and very near villages over the decade
+
+# Divide for storm affected and unaffected
+yearly_summary <- df_10km %>%
+  group_by(Year) %>%
+  summarize(
+    # Mean aquaculture % for affected and not affected villages
+    mean_aquaculture_affected = mean(Aqua_perc[postSurge == 1], na.rm = TRUE),
+    mean_aquaculture_not_affected = mean(Aqua_perc[postSurge == 0], na.rm = TRUE),
+    
+    # Standard deviation for aquaculture
+    sd_aquaculture_affected = sd(Aqua_perc[postSurge == 1], na.rm = TRUE),
+    sd_aquaculture_not_affected = sd(Aqua_perc[postSurge == 0], na.rm = TRUE),
+    
+    # Mean salinity % for affected and not affected villages
+    mean_salinity_affected = mean(Saline_perc_norm[postSurge == 1], na.rm = TRUE),
+    mean_salinity_not_affected = mean(Saline_perc_norm[postSurge == 0], na.rm = TRUE),
+    
+    # Standard deviation for salinity
+    sd_salinity_affected = sd(Saline_perc_norm[postSurge == 1], na.rm = TRUE),
+    sd_salinity_not_affected = sd(Saline_perc_norm[postSurge == 0], na.rm = TRUE),
+    
+    # Count of affected and not affected villages
+    n_affected = sum(postSurge == 1, na.rm = TRUE),
+    n_not_affected = sum(postSurge == 0, na.rm = TRUE),
+    
+    # Count of storm-affected villages
+    storm_affected_villages = sum(postSurge, na.rm = TRUE),
+    
+    # Total number of unique villages
+    n_villages = n_distinct(UniqueID)
+  ) %>%
+  mutate(
+    # Compute standard error (SE) for aquaculture
+    se_aquaculture_affected = sd_aquaculture_affected / sqrt(n_affected),
+    se_aquaculture_not_affected = sd_aquaculture_not_affected / sqrt(n_not_affected),
+    
+    # Compute standard error (SE) for salinity
+    se_salinity_affected = sd_salinity_affected / sqrt(n_affected),
+    se_salinity_not_affected = sd_salinity_not_affected / sqrt(n_not_affected),
+    
+    # Compute 95% Confidence Intervals for aquaculture
+    upper_bound_aquaculture_affected = mean_aquaculture_affected + (1.96 * se_aquaculture_affected),
+    lower_bound_aquaculture_affected = mean_aquaculture_affected - (1.96 * se_aquaculture_affected),
+    
+    upper_bound_aquaculture_not_affected = mean_aquaculture_not_affected + (1.96 * se_aquaculture_not_affected),
+    lower_bound_aquaculture_not_affected = mean_aquaculture_not_affected - (1.96 * se_aquaculture_not_affected),
+    
+    # Compute 95% Confidence Intervals for salinity
+    upper_bound_salinity_affected = mean_salinity_affected + (1.96 * se_salinity_affected),
+    lower_bound_salinity_affected = mean_salinity_affected - (1.96 * se_salinity_affected),
+    
+    upper_bound_salinity_not_affected = mean_salinity_not_affected + (1.96 * se_salinity_not_affected),
+    lower_bound_salinity_not_affected = mean_salinity_not_affected - (1.96 * se_salinity_not_affected)
+  )
+
+print(yearly_summary)
+
+
+# Visualize aquaculture trends over time for affected and not affected villages
+ggplot(yearly_summary) +
+  # Add confidence bands using geom_ribbon (or geom_errorbar())
+  geom_ribbon(aes(x = Year, ymin = lower_bound_aquaculture_affected, ymax = upper_bound_aquaculture_affected, fill = "Affected by Storms"), alpha = 0.2) +
+  geom_ribbon(aes(x = Year, ymin = lower_bound_aquaculture_not_affected, ymax = upper_bound_aquaculture_not_affected, fill = "Not Affected by Storms"), alpha = 0.2) +
+  
+  # Lines for means
+  geom_line(aes(x = Year, y = mean_aquaculture_affected, color = "Affected by Storms")) +
+  geom_line(aes(x = Year, y = mean_aquaculture_not_affected, color = "Not Affected by Storms")) +
+  
+  # Points for means
+  geom_point(aes(x = Year, y = mean_aquaculture_affected, color = "Affected by Storms")) +
+  geom_point(aes(x = Year, y = mean_aquaculture_not_affected, color = "Not Affected by Storms")) +
+  
+  # Titles & labels
+  labs(title = "Average Aquaculture Percentage for Villages less than 10km from the sea",
+       x = "Year", y = "Average Aquaculture (%)", color = "Storm Impact", fill = "Storm Impact") +
+  scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
+  
+  # Custom colors for lines and fills
+  scale_color_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
+  scale_fill_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
+  
+  theme_minimal()
+ggsave("outputs/Stormwise_aquaTrends_1990-25_veryverynearVillages.png", width = 14, height = 6, dpi = 300)
+
+
+# Visualize salinity trends over time for affected and not affected villages
+ggplot(yearly_summary, aes(x=factor(Year))) +
+  geom_ribbon(aes(x = Year, ymin = lower_bound_salinity_affected, ymax = upper_bound_salinity_affected, fill = "Affected by Storms"), alpha = 0.2) +
+  geom_ribbon(aes(x = Year, ymin = lower_bound_salinity_not_affected, ymax = upper_bound_salinity_not_affected, fill = "Not Affected by Storms"), alpha = 0.2) +
+  geom_line(aes(x = Year, y = mean_salinity_affected, color = "Affected by Storms")) +
+  geom_line(aes(x = Year, y = mean_salinity_not_affected, color = "Not Affected by Storms")) +
+  geom_point(aes(x = Year, y = mean_salinity_affected, color = "Affected by Storms")) +
+  geom_point(aes(x = Year, y = mean_salinity_not_affected, color = "Not Affected by Storms")) +
+  scale_color_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
+  scale_fill_manual(values = c("Affected by Storms" = "blue", "Not Affected by Storms" = "orange")) +
+  scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
+  labs(title = "Average Saline Area Percentage for Villages less than 10km from the sea",
+       x = "Year", y = "Average Saline Area (%)", color = "Storm Impact", fill = "Storm Impact") +
+  theme_minimal()
+
+ggsave("outputs/Stormwise_salinityTrends_1990-25_veryverynearVillages.png", width = 14, height = 6, dpi = 300)
+
+
+
+
+
+
+
+
+
+
 # 3. Time series for Mapping all villages
 storm_effect <- df %>%
   group_by(postSurge) %>%  # Binary: 0 = No, 1 = Yes
@@ -593,10 +726,10 @@ yearly_summary <- df %>%
 
 # Define custom colors
 category_colors <- c(
-  "Flooded & High Saline" = "blue",
-  "Non-Flooded & High Saline" = "orange",
-  "Flooded & Low Saline" = "darkgreen",
-  "Non-Flooded & Low Saline" = "grey"
+  "Surge & High Saline" = "blue",
+  "Non-Surge & High Saline" = "orange",
+  "Surge & Low Saline" = "darkgreen",
+  "Non-Surge & Low Saline" = "grey"
 )
 
 ggplot(yearly_summary, aes(x = Year, y = mean_aquaculture, color = Saline_Storm_Category, fill = Saline_Storm_Category)) +
@@ -608,7 +741,8 @@ ggplot(yearly_summary, aes(x = Year, y = mean_aquaculture, color = Saline_Storm_
   scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
   scale_color_manual(values = category_colors) +  # Apply custom colors
   scale_fill_manual(values = category_colors) +  # Match fill colors to lines
-  theme_minimal()
+  theme_minimal() + 
+  theme(legend.position = "bottom")
 
 # Save plot
 ggsave("outputs/Aquaculture_Trends_Salinity_Storm_1990-2025.png", width = 14, height = 6, dpi = 300)
