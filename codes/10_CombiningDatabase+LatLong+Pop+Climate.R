@@ -63,7 +63,7 @@ States_AllData_union <- States_AllData %>%
   mutate(Shape_Area = as.numeric(Shape_Area))
 
 
-# Save a copy with geometry retained for Moran's I later 
+# # A copy with geometry retained for Moran's I and spatial lag
 # States_AllData_geometry <- States_AllData %>%
 #   group_by(UniqueID) %>%
 #   summarise(geometry = st_union(geometry), .groups = "drop") %>%
@@ -77,10 +77,10 @@ States_AllData_union <- States_AllData %>%
 # States_AllData_geometry$Longitude <- st_coordinates(centroids)[,1]
 # States_AllData_geometry$Latitude <- st_coordinates(centroids)[,2]
 # 
-# # Save as a multipolygon shapefile
-# st_write(States_AllData_geometry, "data/shp/States_AllData_geometry.shp", delete_layer = TRUE)
-# 
-# 
+# # # Save as a multipolygon shapefile
+# # st_write(States_AllData_geometry, "data/shp/States_AllData_geometry.shp", delete_layer = TRUE)
+
+
 
 # View result
 head(States_AllData_union)
@@ -97,6 +97,8 @@ uid_duplicates <- unique_ids %>%
   filter(n() > 1) %>%
   ungroup()
 print(paste("Duplicate rows in UniqueIDs:", nrow(uid_duplicates)))
+
+
 
 
 
@@ -1585,12 +1587,23 @@ aqua_salinity_surge$Saline <- ifelse(aqua_salinity_surge$Saline_perc_norm >= med
 table(aqua_salinity_surge$Saline, aqua_salinity_surge$Year)
 
 
+# Calculate and record mean and Sd of salinity perc for later calculations 
+# Compute for the two periods separately 
+
+mean_salinity_perc_13_25 <- mean(aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year >= 2013], na.rm = TRUE)
+sd_salinity_perc_13_25 <- sd(aqua_salinity_surge$Saline_perc[aqua_salinity_surge$Year >= 2013], na.rm = TRUE)
+
+mean_salinity_perc_13_25
+sd_salinity_perc_13_25
+
+
+
 # Aquaculture 
 lm_discont <- lm(Aqua_perc ~ Year + I(Year >= 2013), data = aqua_salinity_surge)
 summary(lm_discont)
 # Interpretation: A statistically significant but very small upward trend over time in aquaculture land share (0.023 percentage point per year).
 # The coefficient for the sensor break (post-2012) is small and not statistically significant. That means: There is no evidence that aquaculture values jump discontinuously at 2013.
-# R-squared: ~0.0045 (negligible): The model explains almost none of the variation in Aqua_perc. This is expected, because you're only modeling it with year and a sensor-break dummy — no real predictors yet (like salinity or storm).
+# R-squared: ~0.0045 (negligible): The model explains almost none of the variation in Aqua_perc. This is expected, because this only mmodels year and a sensor-break dummy — no real predictors yet (like salinity or storm).
 # Aquaculture does not have a discontinuity at 2013. 
 
 

@@ -394,6 +394,52 @@ ggsave("visuals/DiD/TN_event_study_alt.jpg", plot = p, width = 14, height = 6, d
 
 
 
+# Combine all event studies into one graphic (alternate visualization) 
+# Tidy and label each output
+tidy_TN  <- tidy(out_TN)  %>% filter(group != 1992) %>% mutate(state = "Tamil Nadu")
+tidy_AP  <- tidy(out_AP)  %>% mutate(state = "Andhra Pradesh")
+tidy_OD  <- tidy(out_OD)  %>% mutate(state = "Odisha")
+
+# Combine all
+att_combined <- bind_rows(tidy_TN, tidy_AP, tidy_OD)
+
+# Create event time and pre/post indicator
+att_combined <- att_combined %>%
+  mutate(
+    event_time = time - group,
+    period = ifelse(event_time < 0, "Pre", "Post"),
+    group_label = paste(state, group)
+  )
+
+# Plot with facets by state and cohort (group year)
+p_combined <- ggplot(att_combined, aes(x = event_time, y = estimate, color = period)) +
+  geom_point(size = 2) +
+  geom_line(aes(group = 1)) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                    ymax = estimate + 1.96 * std.error),
+                width = 0.3) +
+  facet_wrap(~ group_label, ncol = 2, scales = "free_x") +
+  scale_color_manual(values = c("Pre" = "orange", "Post" = "steelblue")) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Dynamic Effects of Storm Surge Exposure on Aquaculture by Event Cohort",
+    x = "Event Time (Years Since Surge)", y = "ATT (pp effect)",
+    color = "Period"
+  ) +
+  theme_minimal(base_size = 14)
+
+# Display
+plot(p_combined)
+
+# Save
+ggsave("visuals/DiD/Combined_EventStudy_ATT.jpg", plot = p_combined, width = 12, height = 8, dpi = 300)
+
+
+
+
+
+
+
 # Compute overall ATT using OD, AP, TN ATTs
 # Extract group-level ATT and SE for each state
 att_od  <- agg_OD$overall.att
@@ -469,6 +515,11 @@ ggplot(att_all_clean, aes(x = time, y = estimate, color = State)) +
   theme_minimal(base_size = 14)
 
 ggsave("visuals/DiD/All_event_study.jpg", width = 14, height = 6, dpi = 300)
+
+
+
+
+
 
 
 

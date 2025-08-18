@@ -1,0 +1,7 @@
+Variable,est,se,Controls
+Surge (in low saline areas),0.191,0.101,Model 5
+Salinity (in non-surge areas),0.053,0.028,Model 5
+Surge and High Salinity,0.105,0.034,Model 5
+Surge (in low saline areas),0.122,0.034,Model 2
+Salinity (in non-surge areas),0.031,0.026,Model 2
+Surge and High Salinity,0.087,0.034,Model 2

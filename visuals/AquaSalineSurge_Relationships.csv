@@ -1,5 +1,5 @@
 Variable,est,se,Controls
 Surge (in low saline areas),0.122,0.034,Village + Time FE
 Salinity (in non-surge areas),0.031,0.026,Village + Time FE
-Surge and Salinity,0.209,0.034,Village + Time FE
+Surge and High Salinity,0.209,0.034,Village + Time FE
 Aquaculture (Past),0.64,0.009,Village + Time FE

@@ -6,8 +6,14 @@ library(corrplot)
 
 getwd()
 
-df <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip", 
-                   "aqua_salinity_surge_1990-2025.csv"))
+df <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip",
+                  "aqua_salinity_surge_1990-2025.csv"))
+
+
+# # Error corrected df
+# df <- read.csv("outputs/aqua_salinity_surge_1990-2025.csv")
+
+
 summary(df)
 
 # Near and very near villages only 
@@ -733,16 +739,30 @@ category_colors <- c(
 )
 
 ggplot(yearly_summary, aes(x = Year, y = mean_aquaculture, color = Saline_Storm_Category, fill = Saline_Storm_Category)) +
-  #geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2) +  # Error bands
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  labs(title = "Aquaculture Trends Over Time by Salinity & Storm Impact",
-       x = "Year", y = "Average Aquaculture (%)", color = "Category", fill = "Category") +
-  scale_x_continuous(breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 1)) +  # Ensure integer year labels
-  scale_color_manual(values = category_colors) +  # Apply custom colors
-  scale_fill_manual(values = category_colors) +  # Match fill colors to lines
-  theme_minimal() + 
-  theme(legend.position = "bottom")
+  # geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2) +  # Optional error bands
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Aquaculture Trends Over Time by Salinity & Storm Impact",
+    x = "Year", 
+    y = "Average Aquaculture (%)", 
+    color = "Category", 
+    fill = "Category"
+  ) +
+  scale_x_continuous(
+    breaks = seq(min(yearly_summary$Year), max(yearly_summary$Year), by = 5)  # Every 5th year
+  ) +
+  scale_color_manual(values = category_colors) +
+  scale_fill_manual(values = category_colors) +
+  theme_minimal(base_size = 16) +  # Increase base font size
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    legend.position = "bottom"
+  )
 
 # Save plot
 ggsave("outputs/Aquaculture_Trends_Salinity_Storm_1990-2025.png", width = 14, height = 6, dpi = 300)

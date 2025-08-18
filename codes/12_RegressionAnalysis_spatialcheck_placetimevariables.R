@@ -21,7 +21,7 @@
 
 
 # ---------------------------------------
-# DATA AND PREP
+# LIBRARIES
 # ---------------------------------------
 # Load required packages
 library(plm)       # For panel data models
@@ -38,11 +38,25 @@ library(zoo) #for rollmean() for calculating smoother percentage changes over 3-
 library(slider)
 library(margins) # For visualizing 
 library(sf)
-library(spdep) #for conley spatial standard error 
+library(spdep) #for conley spatial standard error or spatial lag
 library(spatialreg) #for conley spatial standard error 
+library(purrr)
+library(broom)
+library(ggeffects)
+library(marginaleffects)
 
-data <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip", 
+
+
+# ---------------------------------------
+# DATA AND PREP
+# ---------------------------------------
+
+getwd()
+
+
+data <- read.csv(unz("data/aqua_salinity_surge_1990-2025.zip",
                            "aqua_salinity_surge_1990-2025.csv"))
+
 
 
 # Need lat long in degrees for Conley
@@ -66,11 +80,58 @@ head(village_wgs)
 degrees <- village_wgs %>%
   select(UniqueID, Longitude_d, Latitude_d)
 
+
 data <- data %>%
   left_join(degrees, by = "UniqueID")
   
 head(data)
 summary(data)
+
+
+# Add spatial weights for spatial lag model 
+# Just one row per village is enough 
+# Extract 1 row per UniqueID with coordinates
+village_coords <- data %>%
+  group_by(UniqueID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(UniqueID, Longitude_d, Latitude_d)
+
+# Convert to sf
+village_sf <- st_as_sf(village_coords, coords = c("Longitude_d", "Latitude_d"), crs = 4326)
+
+# Optional: project to UTM for distance-based weights (faster/more accurate)
+village_sf <- st_transform(village_sf, crs = 32644)
+
+# Create spatial weights (k = 5 nearest neighbors)
+coords <- st_coordinates(village_sf)
+nb <- knn2nb(knearneigh(coords, k = 5))
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+# Make an index to map UniqueID to listw
+village_index <- village_sf$UniqueID
+
+# Function to apply spatial lag for a given year and variable
+compute_spatial_lag <- function(df, varname, lw, index) {
+  vals <- df[[varname]]
+  vals[!is.finite(vals)] <- 0  # replace NA/Inf/NaN with 0
+  df <- df[match(index, df$UniqueID), ]
+  lag.listw(lw, vals, zero.policy = TRUE)
+}
+
+# Now loop over years in the main data
+data <- data %>%
+  group_by(Year) %>%
+  mutate(
+    splag_surge = compute_spatial_lag(pick(everything()), "postSurge", lw, village_index),
+    splag_salinity = compute_spatial_lag(pick(everything()), "Saline_perc_norm", lw, village_index),
+    splag_aqua = compute_spatial_lag(pick(everything()), "Aqua_perc", lw, village_index)
+  ) %>%
+  ungroup()
+
+summary(data$Aqua_perc)
+summary(data$splag_aqua)
+
 
 
 # Check for missing values
@@ -120,13 +181,29 @@ summary(data$Rainfall_mm)
 # Convert rainfall from mm to m to make the results more meaningful
 data$Rainfall_m <- data$Rainfall_mm / 1000
 
+#----- Baseline aquaculture in non-surge affected villages 
+baseline_pre_surge <- data %>%
+  filter(postSurge == 0) %>%
+  summarise(mean_aqua_perc = mean(Aqua_perc, na.rm = TRUE))
+
+baseline_pre_surge
+
+#----- Baseline salinity 
+mean_salinity <- data %>%
+  filter(!is.na(avg_salinity_5yr)) %>%
+  summarize(avg = mean(avg_salinity_5yr)) %>%
+  pull(avg)
+
+print(mean_salinity)
+
+
 
 # ---------------------------------------
 # REGRESSION MODELS : BASIC RELATIONSHIPS
 # ---------------------------------------
 # Two-way fixed effect models 
 
-# SET A : Without and with controls 
+# SET A : Basic relationships Without and with controls 
 # 1. Y = Salinity, X = surge (without controls except time and unit)
 regA1_1 <- feols(avg_salinity_5yr ~ postSurge + flag | Year, 
                 data = data, vcov = ~UniqueID)
@@ -167,8 +244,7 @@ summary(regA1_2cS)
 # Remember, not each surge is the same in terms of its impact. Diufferent levels of disasters attract different actions from state and non-state actors 
 
 
-# apply spatial standard error 
-
+# apply spatial standard error - controls 
 regA1_2cc <- feols(avg_salinity_5yr ~ postSurge + flag + Rainfall_m + density | UniqueID + Year, 
                  data = data)
 summary(regA1_2cc)
@@ -187,6 +263,16 @@ etable(regA1_2cc, vcov = se_conley)
 # See geographical heterogeneity in this - AP is significant at 1%, TN at 5% and OD not significantly different from TN. 
 # Density is the most statistically significant predictor of salinity (i.e. higher urbanization, higher salinity) 
 
+# apply spatial lag - with controls
+regA1_2cc_sp <- feols(avg_salinity_5yr ~ postSurge + splag_surge + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov = ~UniqueID)
+summary(regA1_2cc_sp)
+
+# It is clear that there is no significant impact of surges on salinity in the neighboring villages
+
+
+
+
 # apply spatial error with state year variations
 regA1_2ccS <- feols(avg_salinity_5yr ~ postSurge + flag + Rainfall_m + density + i(State, Year, ref ="TN") | UniqueID + Year, 
                     data = data)
@@ -201,6 +287,17 @@ se_conley <- vcov_conley(
 etable(regA1_2ccS, vcov = se_conley)
 
 # Odisha has on average 0.0064 units lower salinity than Tamil Nadu over time (net of year and place FEs). This is statistically significant, suggesting structural differences in baseline salinity across states.
+
+
+# apply spatial lag - with state year 
+regA1_2ccS_sp <- feols(
+  avg_salinity_5yr ~ postSurge + splag_surge + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+  data = data, vcov = ~UniqueID
+)
+summary(regA1_2ccS_sp)
+
+
+
 
 
 
@@ -230,7 +327,7 @@ summary(regA1_2_1cS)
 
 
 
-# apply spatial standard error 
+# apply spatial standard error by state time
 
 regA1_2_1ccS <- feols(avg_salinity_5yr ~ Rainfall_m + flag + i(State, Year, ref = "TN") | UniqueID + Year, 
                     data = data)
@@ -247,6 +344,9 @@ etable(regA1_2_1ccS, vcov = se_conley)
 
 # The coefficient of rainfall is not statistically significant => has no association with levels of salinity 
 # However the baseline salinity in Odisha is lower from TN, and thsi difference is statistically different
+
+
+
 
 
 
@@ -301,7 +401,16 @@ etable(regA2_2cc, vcov = se_conley)
 # The ratio with SE (0.1889) is ~1.221 which is below the 1.645 for 10% significance 
 # Cannot exclude the null hypothesis that surge has no effect on aquaculture uptake once spatial clustering is accounted for
 
+# apply spatial lag 
+regA2_2cc_sp <- feols(Aqua_perc ~ postSurge + splag_surge + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov = ~UniqueID)
+summary(regA2_2cc_sp)
 
+# Villages hit by storm surges show ~0.41 pp increase in aquaculture (on average), even after controlling for fixed effects and spatial spillovers. Effect is statistically significant at 5% level.
+
+
+
+# apply spatial error 
 regA2_2ccS <- feols(Aqua_perc ~ postSurge + flag + Rainfall_m + density + i(State, Year, ref="TN")| UniqueID + Year, 
                    data = data)
 summary(regA2_2ccS)
@@ -316,6 +425,16 @@ etable(regA2_2ccS, vcov = se_conley)
 
 # density is a predictor of how aquaculture is adopted 
 # State variations in aquaculture adoption baseline - For Odisha, aquaculture share is .04 pp higher, on average, in each year than TN.
+
+
+# apply spatial lag
+regA2_2ccS_sp <- feols(Aqua_perc ~ postSurge + splag_surge + flag + Rainfall_m + density + i(State, Year, ref="TN")| UniqueID + Year, 
+                    data = data, vcov = ~UniqueID)
+summary(regA2_2ccS_sp)
+
+
+# Villages hit by a storm surge see ~0.4 pp increase in aquaculture. This is similar in magnitude when state-time variation is not controlled, although the significance reduces from 5% to 10% confidence. 
+# Villages surrounded by surge-affected neighbors show significantly lower aquaculture. This suggests negative spillover—possibly reflecting regional infrastructural damage, migration, or shared ecological decline.
 
 
 
@@ -371,6 +490,17 @@ etable(regA3_2cc, vcov = se_conley)
 # Rainfall does not seem to play a meaningful role here — this might be because the effect is either truly null, or already captured by other spatial/temporal variation.
 # Higher population density is associated with less aquaculture, which makes sense in more urbanized/dense areas.
 
+# apply spatial lag 
+regA3_2cc_sp <- feols(Aqua_perc ~ avg_salinity_5yr + splag_salinity + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov = ~UniqueID)
+summary(regA3_2cc_sp)
+
+# A one-unit increase in own-village salinity over the past 5 years is associated with a +0.14 pp increase in aquaculture. Suggests adaptive expansion into saline-tolerant aquaculture.
+# Higher neighboring village salinity also correlates with more aquaculture in the focal village—suggesting regional environmental spillovers or shared adaptive behaviors.
+
+
+
+# apply spatial error with state time controls 
 regA3_2ccS <- feols(Aqua_perc ~ avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref="TN") | UniqueID + Year, 
                    data = data)
 summary(regA3_2ccS)
@@ -382,6 +512,15 @@ se_conley <- vcov_conley(
   cutoff = 5  # in kilometers
 )
 etable(regA3_2ccS, vcov = se_conley)
+
+
+# apply spatial lag with state time controls
+regA3_2ccS_sp <- feols(Aqua_perc ~ avg_salinity_5yr + splag_salinity + flag + Rainfall_m + density + i(State, Year, ref="TN") | UniqueID + Year, 
+                    data = data, vcov = ~UniqueID)
+summary(regA3_2ccS_sp)
+
+# Villages with higher 5-year average salinity see more aquaculture. Suggests a local adaptive response.
+# Neighboring salinity also increases aquaculture. Implies regional spillover or learning.
 
 
 
@@ -414,6 +553,7 @@ summary(regA4_2)
 # This may reflect: Economic investments (e.g., ponds, labor skills), Institutional or policy factors, Environmental feedbacks (e.g., increased salinity reinforcing suitability)
 
 
+
 # with controls
 regA4_2c <- feols(Aqua_perc ~ Lag_Aqua + flag + Rainfall_m + density | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
@@ -427,7 +567,7 @@ summary(regA4_2cS)
 
 
 
-# apply spatial standard error 
+# apply spatial standard error with controls
 regA4_2cc <- feols(Aqua_perc ~ Lag_Aqua + flag + Rainfall_m + density | UniqueID + Year, 
                  data = data)
 summary(regA4_2cc)
@@ -447,7 +587,14 @@ etable(regA4_2cc, vcov = se_conley)
 # Rainfall is not not sigificant 
 # Density remains negatively associated, but the magnitude is small
 
-# apply spatial standard error 
+
+# apply spatial lags with controls 
+regA4_2cc_sp <- feols(Aqua_perc ~ Lag_Aqua + splag_aqua + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov = ~UniqueID)
+summary(regA4_2cc_sp)
+
+
+# apply spatial standard error with state time 
 regA4_2ccS <- feols(Aqua_perc ~ Lag_Aqua + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
                    data = data)
 summary(regA4_2ccS)
@@ -459,6 +606,22 @@ se_conley <- vcov_conley(
   cutoff = 5  # in kilometers
 )
 etable(regA4_2ccS, vcov = se_conley)
+
+# apply spatial lag with state time controls 
+regA4_2ccS_sp <- feols(Aqua_perc ~ Lag_Aqua + splag_aqua + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                    data = data, vcov = ~UniqueID)
+summary(regA4_2ccS_sp)
+
+
+
+models <- list()
+models[['Salinity 1 (Time FE)']] <- regA1_1
+models[['Salinity 2 (Village+Time FE)']] <- regA1_2
+models[['Salinity 3 (Village+Time FE+Controls)']] <- regA4_2ccS_sp
+
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+
 
 
 
@@ -497,7 +660,7 @@ summary(regA5_2cS)
 
 
 
-# apply spatial standard error 
+# apply spatial standard error with controls
 regA5_2cc <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + flag + Rainfall_m + density | UniqueID + Year, 
                  data = data)
 summary(regA5_2cc)
@@ -514,6 +677,23 @@ etable(regA5_2cc, vcov = se_conley)
 # Higher salinity over past 5 years is weakly associated with more aquaculture.
 # Very strong and highly significant autocorrelation — villages with aquaculture in t−1 tend to continue it in t.
 
+
+# apply spatial lag with controls
+regA5_2cc_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov= ~UniqueID)
+summary(regA5_2cc_sp)
+
+# Villages hit by recent storm surges tend to expand aquaculture, controlling for other factors.
+# Surges in neighboring villages do not significantly affect local aquaculture.
+# More saline villages (over 5 yrs) are more likely to expand aquaculture.
+# Neighboring salinity is not significant here; may be picking up less info once own salinity and other factors are included.
+# Strong temporal persistence of aquaculture: villages with past aquaculture tend to continue.
+# More rainfall supports aquaculture (freshwater/brackish buffering).
+# Within R²: 38.3% — very strong explanatory power for within-village temporal variation in aquaculture.
+
+
+
+# apply spatial error with state time 
 regA5_2ccS <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
                    data = data)
 summary(regA5_2ccS)
@@ -526,6 +706,20 @@ se_conley <- vcov_conley(
 )
 etable(regA5_2ccS, vcov = se_conley)
 
+
+# apply spatial lag with state time controls 
+regA5_2ccS_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                    data = data)
+summary(regA5_2ccS_sp)
+
+# Similar effect of storms, but now neighboring effect of surges becomes more significant but negative.
+# Salinity effect becomes slightly stronger, but neighboring effect is not significant. 
+# Slight improvement in model fit after adding statexyear effects, although not significant. 
+
+# postSurge remains a modest, positive driver of aquaculture — robust across models
+# Higher salinity in a village promotes aquaculture adoption (robust result).
+# village aquaculture is more driven by own salinity than neighbor salinity (especially with state-year controls absorbing broader trends).
+# Relative to TN, both states had higher underlying time trends in aquaculture — now explicitly modeled instead of being absorbed in other variables.
 
  
 models <- list()
@@ -613,6 +807,27 @@ etable(regB1_2cc, vcov = se_conley)
 # Only lag aqua and density are significant. But also, within R2 suggests that 38% of within village variation is captured by these measures. Adding rainfall and density doesnt change the model fit. 
 
 
+# apply spatial lag variables with controls
+regB1_2cc_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density | UniqueID + Year, 
+                   data = data, vcov= ~UniqueID)
+summary(regB1_2cc_sp)
+
+# Surge is associated with an increase in aquaculture in low saline areas 
+# surge does not have a significant enighborhood effect 
+# Salinity alone (in non-surge affected places) has no significant impact on aquaculure 
+# Neighborhood effect of salinity is marginal 
+# Interaction term is significant and positive => high saline places when hit by surges have a higher propensity to convert to aquaculture 
+
+# Combined effect of surge during high salinity years:
+# Marginal Effect of Surge =  0.197 + 0.088 x salinity
+# =>  At mean salinity of ~0.5, the effect of postSurge becomes ~0.24
+# At high salinity of 0.8–1, the surge effect is ~0.27–0.29
+# That is, aquaculture increases more in villages with higher salinity during surge years
+
+
+
+
+# apply spatial error with state time 
 regB1_2ccS <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
                    data = data)
 summary(regB1_2ccS)
@@ -624,8 +839,24 @@ se_conley <- vcov_conley(
   cutoff = 5  # in kilometers
 )
 etable(regB1_2ccS, vcov = se_conley)
-
 # Only lag aqua and density are significant. But also, within R2 suggests that 38% of within village variation is captured by these measures. Adding rainfall and density doesnt change the model fit. 
+
+
+
+# spatial lag with state time controls 
+regB1_2ccS_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                    data = data, vcov= ~UniqueID)
+summary(regB1_2ccS_sp)
+
+# Effect of surges attenuates slightly, marginally significant. 
+# Neighborhood effect becomes much stronger and significant. 
+# Effect of salinity is slightly more significant 
+# Marginal effect of salinity n the neighborhood 
+# Interaction becomes stronger and even more significant => In high-salinity areas, surges accelerate aquaculture even more, especially after accounting for state-level trends.
+# Slight improvement in fit from adding State × Year
+
+
+
 
 
 models <- list()
@@ -721,7 +952,9 @@ msummary(models,
 # Predictors + FE with Clustered SE
 # Predictors + Interaction + FE with Clustered SE
 # Predictors + Interaction + Controls + FE with Clustered SE
-# Predictors + Interaction + Controls + FE with Conley SE 
+# Predictors + Interaction + Controls + FE with Spatial lag
+# Note: Opting spatial lag instead of conley spatial error since the latter is less flexible to modify 
+
 
 regA5_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + flag | UniqueID + Year, 
                  data = data, vcov = ~UniqueID)
@@ -739,25 +972,17 @@ regB1_2cS <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSur
                    data = data, vcov = ~UniqueID)
 summary(regB1_2cS)
 
-regB1_2ccS <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
-                    data = data)
-summary(regB1_2ccS)
-
-se_conley <- vcov_conley(
-  regB1_2ccS,
-  lat = ~Latitude_d,
-  lon = ~Longitude_d,
-  cutoff = 5  # in kilometers
-)
-etable(regB1_2ccS, vcov = se_conley)
+regB1_2ccS_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                    data = data, vcov = ~UniqueID)
+summary(regB1_2ccS_sp)
 
 
 models <- list(
-  "Aquaculture (1) Predictors + TWFE" = regA5_2,
-  "Aquaculture (2) Predictors + Interaction + TWFE" = regB1_2,
-  "Aquaculture (3) Predictors + Interaction + Controls + TWFE" = regB1_2c,
-  "Aquaculture (4) Predictors + Interaction + Controls + State-Time factors + TWFE" = regB1_2cS,
-  "Aquaculture (5) Predictors + Interaction + Controls + State-Time factors + TWFE (Spatial)" = regB1_2ccS
+  "Aquaculture (1)" = regA5_2,
+  "Aquaculture (2)" = regB1_2,
+  "Aquaculture (3)" = regB1_2c,
+  "Aquaculture (4)" = regB1_2cS,
+  "Aquaculture (5)" = regB1_2ccS_sp
 )
 
 se_list <- list(
@@ -765,12 +990,7 @@ se_list <- list(
   "Clustered" = ~UniqueID,
   "Clustered" = ~UniqueID,
   "Clustered" = ~UniqueID,
-  "Spatial" = vcov_conley(
-    regB1_2ccS,
-    lat = ~Latitude_d,
-    lon = ~Longitude_d,
-    cutoff = 5
-  )
+  "Clustered" = ~UniqueID
 )
 
 msummary(
@@ -779,6 +999,7 @@ msummary(
   gof_omit = "Adj|Within|Log|AIC|BIC", 
   stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01)
 )
+
 
 
 # Comparing Model 3 and 4 -
@@ -798,6 +1019,221 @@ msummary(
 # In fact, the loss of precision reflects the very nature of the processes we study: storm surges and salinization are spatially concentrated phenomena. 
 # The consistency in R² and effect sizes across models confirms the substantive importance of these variables.
 
+
+
+# Set T1: Run Conley SE for different time periods 
+
+data_1 <- data %>% filter(Year >= 1990 & Year < 2000)
+data_2 <- data %>% filter(Year >= 2000 & Year < 2010)
+data_3 <- data %>% filter(Year >= 2010 & Year < 2020)
+data_4 <- data %>% filter(Year >= 2020 & Year <= 2025)
+
+# Time period 1 
+regT1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                   data = data_1, vcov = ~UniqueID)
+summary(regT1_1)
+
+
+regT1_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                    data = data_1)
+summary(regT1_2)
+
+se_conley <- vcov_conley(
+  regT1_2,
+  lat = ~Latitude_d,
+  lon = ~Longitude_d,
+  cutoff = 5  # in kilometers
+)
+etable(regT1_2, vcov = se_conley)
+
+
+regT1_3 <- feols(Aqua_perc ~ postSurge +  splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_1, vcov=~UniqueID)
+summary(regT1_3)
+
+
+
+
+
+# Time period 2
+regT2_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_2, vcov = ~UniqueID)
+summary(regT2_1)
+
+regT2_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_2)
+summary(regT2_2)
+
+se_conley <- vcov_conley(
+  regT2_2,
+  lat = ~Latitude_d,
+  lon = ~Longitude_d,
+  cutoff = 5  # in kilometers
+)
+etable(regT2_2, vcov = se_conley)
+
+regT2_3 <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_2, vcov = ~UniqueID)
+summary(regT2_3)
+
+
+
+# Time period 3
+regT3_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_3, vcov = ~UniqueID)
+summary(regT3_1)
+
+regT3_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_3)
+summary(regT3_2)
+
+se_conley <- vcov_conley(
+  regT3_2,
+  lat = ~Latitude_d,
+  lon = ~Longitude_d,
+  cutoff = 5  # in kilometers
+)
+etable(regT3_2, vcov = se_conley)
+
+regT3_3 <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_3, vcov = ~UniqueID)
+summary(regT3_3)
+
+
+
+# Time period 4
+regT4_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_4, vcov = ~UniqueID)
+summary(regT4_1)
+
+regT4_2 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_4)
+summary(regT4_2)
+
+se_conley <- vcov_conley(
+  regT4_2,
+  lat = ~Latitude_d,
+  lon = ~Longitude_d,
+  cutoff = 5  # in kilometers
+)
+etable(regT4_2, vcov = se_conley)
+
+
+regT4_3 <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr + flag  + Rainfall_m + density + i(State, Year, ref = "TN") | UniqueID + Year, 
+                 data = data_4, vcov = ~UniqueID)
+summary(regT4_3)
+
+
+
+# Print model summaries comparing different time periods 
+# Non-spatial 
+models <- list(
+  "Aquaculture (1990-2000) " = regT1_1,
+  "Aquaculture (2000-2010) " = regT2_1,
+  "Aquaculture (2010-2020) " = regT3_1,
+  "Aquaculture (2020-2025) " = regT4_1
+)
+
+msummary(
+  models,
+  gof_omit = "Adj|Within|Log|AIC|BIC", 
+  stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01)
+)
+
+
+# With Conley SEs
+models <- list(
+  "Aquaculture (1990-2000) " = regT1_2,
+  "Aquaculture (2000-2010) " = regT2_2,
+  "Aquaculture (2010-2020) " = regT3_2,
+  "Aquaculture (2020-2025) " = regT4_2
+)
+
+se_list <- list(
+  "Conley SE" = vcov_conley(
+    regT1_2,
+    lat = ~Latitude_d,
+    lon = ~Longitude_d,
+    cutoff = 5), 
+  "Conley SE" = vcov_conley(
+    regT2_2,
+    lat = ~Latitude_d,
+    lon = ~Longitude_d,
+    cutoff = 5), 
+  "Conley SE" = vcov_conley(
+    regT3_2,
+    lat = ~Latitude_d,
+    lon = ~Longitude_d,
+    cutoff = 5), 
+  "Conley SE" = vcov_conley(
+    regT4_2,
+    lat = ~Latitude_d,
+    lon = ~Longitude_d,
+    cutoff = 5)
+)
+
+msummary(
+  models,
+  vcov = se_list,
+  gof_omit = "Adj|Within|Log|AIC|BIC", 
+  stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01)
+)
+
+
+  
+# Spatial lag
+models <- list(
+  "Aquaculture (1990-2000) " = regT1_3,
+  "Aquaculture (2000-2010) " = regT2_3,
+  "Aquaculture (2010-2020) " = regT3_3,
+  "Aquaculture (2020-2025) " = regT4_3
+)
+
+msummary(
+  models,
+  gof_omit = "Adj|Within|Log|AIC|BIC", 
+  stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01)
+)
+
+# 1990-2000
+# In the early periods, salinity is a strong predictor of aquaculture but not surge on its own.  
+# Surges in high-salinity areas, in fact, significantly reduce aquaculture – suggesting either destruction of fledgling aquaculture or hesitation to expand under double risk.
+# R2 is modest, indicating limited model fit — possibly because aquaculture was still emerging or more heterogeneous.
+
+# 2000-2010
+# Surge is dropped due to collienarity suggesting that surges are more uniform across space or time in this period.
+# Salinity does not have a significant impact, but the spillover has s tronger negative effect — perhaps indicating oversaturation or environmental degradation deterring further expansion.
+# The interaction term loses significance. 
+# This period is largely explained by state time factors o past aquaculture. 
+
+
+# 2010-2020
+# Storm surges positively and strongly predict aquaculture, and high magnitude impact (1.1pp)
+# There is also a strong surge spillover effect (+2.88pp)
+# Salinity and its spillover effects are also significant 
+# Interaction loses significance. 
+
+# 2020-2025 
+# The main storm surge effect is again collinear — possibly because surges are highly spatially clustered or temporally fixed.
+# Interaction between salinity and surge is strongly negative (–0.6 ***), consistent with compound effects limiting aquaculture expansion.
+# Lag_Aqua turns negative — suggesting possible saturation or policy/environmental backlash in high-aquaculture areas.
+
+
+
+# Overall: 
+# Salinity starts out positive, becomes negative, and then weakens
+# Storms are initially destructive, then adaptive, and then again interact destructively with salinity in more recent times
+# The salinity × surge interaction flips in importance — from negative early on (barrier), to insignificant (neutral), to strongly negative again post-2020.
+# Suggests compound environmental stressors are increasingly shaping aquaculture decisions.
+# The variable postSurge being dropped in some periods implies low within-village variation — perhaps due to fewer new surge events or high storm clustering.
+
+# We observe substantial temporal heterogeneity in the effects of storm surges and salinity on aquaculture expansion over time. 
+# In the early period (1990–2000), salinity strongly encouraged aquaculture, but when combined with storm exposure, it deterred expansion. 
+# As aquaculture matured (2010–2020), storm surges became positively associated with expansion — possibly indicating adaptation. 
+# By 2020–2025, we again observe negative interactive effects, suggesting that repeated exposure to high salinity and storms may be overwhelming adaptive responses.
+
+
+# These results are robust for spatial error correction
 
 
 
@@ -834,6 +1270,21 @@ etable(regC1_2c, vcov = se_conley)
 # In Odisha (OD), the surge effect on salinity is not significantly different from Tamil Nadu. => In OD, the effect is +0.113 higher than TN, i.e., net effect = -0.0973, not statistically significant
 
 
+# spatial lag variables 
+regC1_2c_sp <- feols(avg_salinity_5yr ~ postSurge + postSurge * State + splag_surge + flag + Rainfall_m + density | UniqueID + Year, 
+                  data = data, vcov = ~UniqueID)
+summary(regC1_2c_sp)
+
+# In Tamil Nadu, after a storm surge, average 5-year salinity decreases by ~0.206 units on average, holding other factors constant.
+# No significant effect of neighboring surges on salinity.
+# In Andhra Pradesh, the differential effect of surge is +0.466 units above Tamil Nadu. So, net effect in AP = –0.206 + 0.466 = +0.26 increase in salinity.
+# In Odisha, the differential effect is not statistically significant. Net effect = –0.206 + 0.101 = –0.105, but not significant.
+# Overall, storm surge effects on salinity are state dependent - In Tamil Nadu, salinity decreases post-surge (significant), in AP it increases (significant), and OD there is no significant effect overall. 
+# Spillover (spatial lag) of surge has no significant effect — suggests salinity changes are localized rather than driven by neighboring surge exposure.
+
+
+
+
 
 # 2. Y = Aquaculture, X = Surge (without controls except time and unit, with controls)
 regC2_1 <- feols(Aqua_perc ~ postSurge + postSurge * State + flag | Year, 
@@ -863,6 +1314,14 @@ etable(regC2_2c , vcov = se_conley)
 # => In OD, the surge-driven aquaculture increase seen in TN disappears completely — a statistically significant difference from TN, possibly due to slower recovery, more damage/disruption from surges, Policy or infrastructure differences
 
 
+# with spatial lag variables 
+regC2_2c_sp <- feols(Aqua_perc ~ postSurge + splag_surge + postSurge * State + flag | UniqueID + Year, 
+                  data = data, vcov = ~UniqueID)
+summary(regC2_2c_sp)
+
+
+
+
 # 3. Y = Aquaculture, X = Salinity in previous period (without controls except time and unit, with controls)
 regC3_1 <- feols(Aqua_perc ~ avg_salinity_5yr + avg_salinity_5yr * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
@@ -888,6 +1347,14 @@ etable(regC3_2c, vcov = se_conley)
 # In Tamil Nadu, a 1-unit increase in average salinity over 5 years is associated with a 0.1476 unit decrease in aquaculture percentage, statistically significant at 5% (positive and significant)
 # In Andhra Pradesh, the effect of salinity on aquaculture is 0.6493 units higher than in TN (0.6493-0.1476); this difference is significant at 5% (p < 0.05) (positive and significant)
 # In Odisha, the effect of salinity on aquaculture is 0.305 units higher than TN, and this difference is significant at 5% (p < 0.05) => +0.1579 (positive and significant)
+
+
+# with spatial lag 
+regC3_2c_sp <- feols(Aqua_perc ~ avg_salinity_5yr + splag_salinity + avg_salinity_5yr * State + flag | UniqueID + Year, 
+                  data = data, vcov = ~UniqueID)
+summary(regC3_2c_sp)
+
+
 
 
 # 4. Y = Aquaculture, X = Aqua time - 1 (without controls except time and unit, with controls)
@@ -916,6 +1383,18 @@ etable(regC4_2c, vcov = se_conley)
 # In TN, a 1-unit increase in previous year's aquaculture is associated with a 0.3864 pp increase in current aquaculture. Highly significant.
 # In Andhra Pradesh, the effect of past aquaculture is 0.2551 units stronger than in Tamil Nadu. 
 # In Odisha, the effect is 0.3014 units stronger than in Tamil Nadu. 
+
+# with spatial lag variable 
+regC4_2c_sp <- feols(Aqua_perc ~ Lag_Aqua + splag_aqua + Lag_Aqua * State + flag | UniqueID + Year, 
+                  data = data, vcov = ~UniqueID)
+summary(regC4_2c_sp)
+
+# both R2 and within R2 are quite high. Within R²: 0.567 → Indicates that the model explains about 56.7% of the variation over time within villages, which is quite good for a panel dataset.
+# In TN, for 1 pp increase in aquaculture last year, current aquaculture increases by ~0.29 pp, controlling for other factors => Strong temporal persistence.
+# For every 1 percentage point increase in neighboring villages’ aquaculture, a village's aquaculture increases by ~0.67 pp. Very strong spatial spillover.
+# In AP, the effect of past aquaculture is stronger than in TN by ~0.09 pp. Net effect: 0.293 + 0.091 ≈ 0.384.
+# In Odisha, even stronger temporal persistence: effect is higher than TN by ~0.16 pp. Net effect: 0.293 + 0.159 ≈ 0.452.
+
 
 
 
@@ -989,6 +1468,8 @@ msummary(
 # Set D : State variations and Interactions
 
 # 1. Y = Aquaculture, X = Surge, X = Salinity, X = Aqua-1 (with one interaction at a time)
+
+# surge state interactions
 regD1_1 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + postSurge * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_1)
@@ -1023,8 +1504,23 @@ etable(regD1_2c, vcov = se_conley)
 # In AP, the effect of surge exposure is 1.123 points weaker than in Tamil Nadu, however, this difference is not significant 
 # In OD, the effect of surge exposure is 1.591 points weaker than in Tamil Nadu. Although statistically significant at 5%, but the effect is relatively small (0.01)
 
+# with spatial lag variable 
+regD1_2c_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * State + flag | UniqueID + Year, 
+                  data = data)
+summary(regD1_2c_sp)
 
 
+# In TN, aquaculture increases by ~1.49pp in years following a storm surge.
+# Aquaculture also rises ~0.22pp when neighboring villages experience storm surge. Shows spillover response to shocks.
+# Higher long-term salinity is associated with higher aquaculture. Likely reflects adaptation to saline conditions
+# Spatial salinity has a negative but insignificant association with aquaculture.
+# Strong temporal persistence in aquaculture practices: villages repeat prior behavior.
+# In AP, aquaculture increases less after surge than in TN: net effect = 1.493 – 1.195 ≈ +0.30 (still positive, but weaker).
+# In OD, effect of surge is negative: net effect = 1.493 – 1.687 ≈ –0.19
+# Suggests state-level differences in how villages adapt to shocks (e.g., policies, land rights, exposure)
+
+
+# salinity state interaction 
 regD1_3 <- feols(Aqua_perc ~ postSurge + avg_salinity_5yr + Lag_Aqua + avg_salinity_5yr * State + flag | Year, 
                  data = data, vcov = ~UniqueID)
 summary(regD1_3)
@@ -1058,6 +1554,14 @@ etable(regD1_4c, vcov = se_conley)
 # Strong persistence—past aquaculture drives future aquaculture.
 # Salinity’s effect is less negative/more positive in Andhra Pradesh than in TN. 5% significance level. 
 # Salinity’s effect is somewhat less negative in Odisha, significant at 10%.
+
+# with spatial lag variables 
+regD1_4c_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + avg_salinity_5yr * State + flag | UniqueID + Year, 
+                  data = data, vcov = ~UniqueID)
+summary(regD1_4c_sp)
+
+# In TN, salinity deters aquaculture (or has no effect).
+# In AP and OD, salinity encourages aquaculture (conversion of saline land to aquaculture).
 
 
 
@@ -1133,6 +1637,29 @@ summary(regE1_1)
 # AP - Surges alone are less impacxtful as compared to TN, but salinity is strongly positively associated with aquaculture. Surges in high saline conditions tend to trigger aquaculture expansion the most in AP. 
 # OD - Surges have a weak or even negative effect on aqua expansion. Salinity has a more positive response to aquaculture compared to TN. Surges in high saline places have small negative effect, however not significant. 
 
+# spatial lag variables 
+regE1_1_sp <- feols(Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua + postSurge * avg_salinity_5yr * State + flag | UniqueID + Year, 
+                 data = data, vcov = ~UniqueID)
+summary(regE1_1_sp)
+
+
+# Interpretation: 
+# After a storm surge in TN's low saline areas, aquaculture increases by ~1.41 percentage points.
+# Surge in AP's low saline areas = −0.97 + 1.4 = +0.44, sig 
+# Surge in OD's low saline areas = -1.6 + 1.4 = -0.2pp, sig
+# Villages near those hit by surges also see small positive spillover effect (+0.22, sig).
+
+# Higher salinity in TN is associated with reduced aquaculture by −0.049 pp.
+# Salinity in non-surge affected areas in AP: 0.120394 - 0.049 = + , sig
+# Salinity in non-surge affected areas in OD: 0.129224 - 0.049 = + , sig
+# Villlages near saline villages see no significant difference in their aquaculture uptake 
+
+# triple interaction => surges in high slaine areas 
+# TN = 0.149583 , ns
+# AP = 0.851100 + 0.15 , sig => reas with high salinity and recent storm surge see a large increase in aquaculture.
+# OD = -0.180133 + 0.15 , ns 
+
+
 
 # Test for non-linear relationship with salinity 
 data_clean <- data %>% filter(!is.na(avg_salinity_5yr))
@@ -1183,11 +1710,59 @@ etable(regE1_2c, vcov = se_conley)
 # Suggests salinity impacts are nonlinear, which is important for designing thresholds/interventions.
 
 
+# apply spatial lag 
+regE1_2c_sp <- feols(Aqua_perc ~ postSurge + poly(avg_salinity_5yr, 2) + Lag_Aqua + postSurge * poly(avg_salinity_5yr, 2) * State + flag + splag_salinity + splag_surge + Rainfall_m + density | UniqueID + Year, 
+                  data = data_clean, vcov = ~UniqueID)
+summary(regE1_2c_sp)
+
+
+
+
 models <- list()
 models[['Aquaculture (three-way interaction)']] <- regE1_1
 models[['Aquaculture (non-linearity)']] <- regE1_2
-
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+
+models <- list()
+models[['Aquaculture']] <- regE1_2c_sp
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+
+
+
+
+
+# Spatial lag models for states
+models <- list()
+models[["Aquaculture (1) State variations by Storm effect"]] <- regD1_2c_sp
+models[["Aquaculture (2) State variations by Salinity levels"]] <- regD1_4c_sp
+models[["Aquaculture (3) State variations by storm and salinity levels"]] <- regE1_1_sp
+
+
+msummary(
+  models,
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  gof_omit = c("BIC|AIC|RMSE|R2 Within Adj."),
+  coef_omit = c("(Intercept)"),
+  coef_map = c(
+    "postSurge" = "Post-Surge in low saline villages (TN or all)",
+    "postSurge:StateAP" = "Post-surge in low saline villages (AP wrt TN)", 
+    "postSurge:StateOD" = "Post-surge in low saline villages (OD wrt TN)",
+    "avg_salinity_5yr" = "Persisent Salinity without surges (TN or all)",
+    "avg_salinity_5yr:StateAP" = "Persisent Salinity without surges (AP wrt TN)",
+    "avg_salinity_5yr:StateOD" = "Persisent Salinity without surges (OD wrt TN)",
+    "postSurge:avg_salinity_5yr" = "Surge effect in High Saline (TN)",
+    "postSurge:avg_salinity_5yr:StateAP" = "Surge effect in High Saline (AP wrt TN)", 
+    "postSurge:avg_salinity_5yr:StateOD" = "Surge effect in High Saline (OD wrt TN)",
+    "Lag_Aqua" = "AC in t-1",
+    "splag_surge" = "Surge in 5 nearest villages", 
+    "splag_salinity" = "Salinity in 5 nearest villages"
+  ),
+  filename = 'table.rtf'
+)
+
+
 
 
 
@@ -1273,9 +1848,17 @@ etable(regF1_2c, vcov = se_conley)
 
 # Effects still significant, although at a lower significance levels
 
+
+# with spatial lag terms 
+regF1_2c_sp <- feols(Saline_perc_norm  ~ Lag_Aqua + splag_aqua + postSurge + splag_surge | UniqueID + Year, 
+                  data = data, vcov= ~UniqueID)
+summary(regF1_2c_sp)
+
+
 models <- list()
 models[['Salinity (1)']] <- regF1_1
 models[['Salinity (2)']] <- regF1_2
+models[['Salinity (3)']] <- regF1_2c_sp 
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 
@@ -1291,11 +1874,6 @@ regF2_2 <- feols(future_avg_salinity ~ Aqua_perc + postSurge | UniqueID + Year,
                  vcov = ~UniqueID, data = data)
 
 summary(regF2_2)
-
-models <- list()
-models[['Future Salinity (1)']] <- regF2_1
-models[['Future Salinity (2)']] <- regF2_2
-msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 
 # apply spatial standard error 
@@ -1313,11 +1891,24 @@ se_conley <- vcov_conley(
 etable(regF2_2c, vcov = se_conley)
 # Past aquaculture is a significant predictor of future salinity, despite severe controls and spatial error handling
 
+# spatial lag terms 
+regF2_2c_sp <- feols(future_avg_salinity ~ Aqua_perc + splag_aqua + postSurge + splag_surge | UniqueID + Year, 
+                  data = data)
 
+summary(regF2_2c_sp)
 
 # These results provide strong empirical evidence of a lagged ecological feedback from human adaptation (aquaculture expansion) to system degradation (salinization). Even after removing the "zero-aquaculture" villages (which might dilute the effect), you still observe a statistically robust and consistent association.
 # The effect persists across model specifications; The postSurge control confirms the model isn't confounded by extreme weather shocks
 # The magnitude is modest but credible for environmental change processes. It is likley modest, because the impact of aquculture on salinity is more localised (in the absolute neighborhoods of the aquaculture ponds which is averaged across the village)
+
+models <- list()
+models[['Future Salinity (1)']] <- regF2_1
+models[['Future Salinity (2)']] <- regF2_2
+models[['Future Salinity (3)']] <- regF2_2c_sp
+msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
+
+
+
 
 
 # 3. By State
@@ -1349,9 +1940,15 @@ etable(regF3_2c, vcov = se_conley)
 # In AP and OD, past aquaculture is positively associated with future salinity – indicating possible degradation or intensification effects. Highly significant in both
 
 
+# Spatial lag terms 
+regF3_2c_sp <- feols(Saline_perc_norm  ~ Lag_Aqua * State + splag_aqua + postSurge + splag_surge | UniqueID + Year, 
+                  data = data, vcov= ~UniqueID)
+summary(regF3_2c_sp)
+
 models <- list()
 models[['Salinity (1)']] <- regF3_1
 models[['Salinity (2)']] <- regF3_2
+models[['Salinity (3)']] <- regF3_2c_sp
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 # Potential explanations for decreased salinity in Tn with increased aquaculture, but increased salinity in OD and AP
@@ -1365,9 +1962,23 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 models <- list()
 models[['Salinity (1)']] <- regF1_2
 models[['Salinity (2)']] <- regF3_2
+models[['Salinity (3)']] <- regF3_2c_sp
 msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AIC|RMSE|R2 Within Adj."),coef_omit=c("(Intercept)"), filename = 'table.rtf')
 
 
+
+# Effect size in absolute terms (non-normalised) 
+# wrt to later time period mean and sd
+# Since the regression is estimating future salinity (t+1), and most of the aquaculture expansion likely happens post-2010, using the mean and SD from 2013–2025 is appropriate. 
+
+# Values from the original data 
+mean_salinity_perc_13_25 <-  2.5775 # baseline salinity 
+sd_salinity_perc_13_25 <- 7.766171
+
+effect_raw <- 0.005 * sd_salinity_perc_13_25
+percent_increase <- (effect_raw / mean_salinity_perc_13_25) * 100
+
+percent_increase
 
 
 # ----------------------
@@ -1375,7 +1986,7 @@ msummary(models, stars = c('*' = .1, '**' = .05, '***' = .01),gof_omit=c("BIC|AI
 # ----------------------
 
 # Basic Relationships 
-a<-read.csv("visuals/AquaSalineSurge_Relationships.csv")
+a<-read.csv("visuals/AquaSalineSurge_Relationships_spatial.csv")
 
 # Use standard errors to calculate CIs
 a$upr <- a$est+(1.96*a$se)
@@ -1385,19 +1996,18 @@ a$lwr <- a$est-(1.96*a$se)
 head(a)
 a$Variable <- as.factor(a$Variable)
 levels(a$Variable)
-a$Variable <- factor(a$Variable, levels=c("Aquaculture (Past)","Surge and Salinity","Salinity (in non-surge areas)","Surge (in low saline areas)"))
+a$Variable <- factor(a$Variable, levels=c("Surge and High Salinity","Salinity (in non-surge areas)","Surge (in low saline areas)"))
 a$Controls<-as.factor(a$Controls)
 
 
-
 # Restrict the data only to estimates from select models (in this case all)
-# a1 <- subset(a, Controls == "Village + Time FE" | Controls == "OD" | Controls == "AP" | Controls == "TN")
-a1 <- subset(a, Controls == "Village + Time FE")
+a1 <- subset(a, Controls == "Model 2" | Controls == "Model 5")
+# a1 <- subset(a, Controls == "Village + Time FE + Place-time varying Controls")
 
 
 # Make sure that the Controls column is a factor and reorder as needed
 levels(a1$Controls)
-a1$Controls <- factor(a1$Controls, levels=c("Village + Time FE"))
+a1$Controls <- factor(a1$Controls, levels=c("Model 2", "Model 5"))
 a1$Controls<-as.factor(a1$Controls)
 
 
@@ -1405,7 +2015,7 @@ a1$Controls<-as.factor(a1$Controls)
 # This is the plot with the horizontal lines
 plot<-ggplot(a1,aes(est,Variable,group=Controls))+
   geom_errorbarh(aes(xmax = upr, xmin = lwr),height=0.2,position=position_dodge(width=0.2), colour="black")+
-  geom_point(size=6, aes(shape=Controls,color=Controls),position=position_dodge(width=0.2))+
+  geom_point(size=3, aes(shape=Controls,color=Controls),position=position_dodge(width=0.2))+
   theme_bw()+
   ggtitle("Estimated Effect on Aquaculture")+
   ylab("")+   theme(legend.position="right")+
@@ -1422,43 +2032,266 @@ plot<-ggplot(a1,aes(est,Variable,group=Controls))+
                                                          legend.key.size = unit(3, 'cm'))+
   geom_vline(xintercept = 0, linetype = "longdash",size = 1)+
 
-  scale_color_manual(values = c( "#990000"))+
+  scale_color_manual(values = c("#990000", "orange"))+
   scale_shape_manual(values = c(16,15,18,17))
 
 print(plot)
 
-ggsave("visuals/SetA_BasicRelationships.png",plot = plot, width = 8, height = 6, units = "in",dpi=600)
+ggsave("visuals/SetA_BasicRelationships_spatialComparison.png",plot = plot, width = 8, height = 6, units = "in",dpi=600)
+
+
+# Plot predictions from main model by Storm-Salinity Category
+# -----------------------------------------------------------
+# prediction doesn't work if any of the values are NA. That's why only returning 756138 values 
+# Create a clean data first and then use that to rerun the regression on 
+# Step 1: Subset the data to complete cases for variables used in the model
+vars_used <- c(
+  "Aqua_perc",           
+  "postSurge", "splag_surge", "avg_salinity_5yr", "splag_salinity",
+  "Lag_Aqua", "flag", "Rainfall_m", "density",
+  "UniqueID", "Year", "State", "Saline_Storm_Category"
+)
+
+data_clean <- data %>% 
+  select(all_of(vars_used)) %>% 
+  drop_na()  
+
+# Step 2: Run your model on this clean subset
+reg_model <- feols(
+  Aqua_perc ~ postSurge + splag_surge + avg_salinity_5yr + splag_salinity + Lag_Aqua +
+    postSurge * avg_salinity_5yr + flag + Rainfall_m + density + i(State, Year, ref = "TN") |
+    UniqueID + Year,
+  data = data_clean,
+  vcov = ~UniqueID
+)
+
+# Step 3: Make predictions or inspect the data
+data_clean$predicted <- predict(reg_model)
+
+predicted_summary <- data_clean %>%
+  group_by(Year, Saline_Storm_Category) %>%
+  summarise(mean_predicted_aqua = mean(predicted, na.rm = TRUE), .groups = "drop")
+
+ggplot(predicted_summary, aes(x = Year, y = mean_predicted_aqua, color = Saline_Storm_Category, fill = Saline_Storm_Category)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Predicted Aquaculture Trends by Salinity & Storm Impact",
+    x = "Year", 
+    y = "Predicted Aquaculture (%)", 
+    color = "Category", 
+    fill = "Category"
+  ) +
+  scale_x_continuous(breaks = seq(min(predicted_summary$Year), max(predicted_summary$Year), by = 5)) +
+  scale_color_manual(values = category_colors) +
+  scale_fill_manual(values = category_colors) +
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    legend.position = "bottom"
+  )
+
+
+# Save the plot
+ggsave("outputs/Predicted_Aquaculture_Trends_Salinity_Storm_1990-2025.png", width = 14, height = 6, dpi = 300)
+
+
+
+
+
+
+# Plot temporal variations in effect sizes 
+# -----------------------------------------
+# Extract and label results
+models <- list(
+  "1990–2000" = regT1_3,
+  "2000–2010" = regT2_3,
+  "2010–2020" = regT3_3,
+  "2020–2025" = regT4_3
+)
+
+coefs_df <- bind_rows(
+  lapply(names(models), function(period) {
+    tidy(models[[period]]) %>%
+      mutate(period = period)
+  })
+)
+
+# Filter to key variables only
+key_vars <- c("postSurge", "splag_surge", "avg_salinity_5yr",
+              "splag_salinity", "Lag_Aqua", "postSurge:avg_salinity_5yr")
+
+# rename variable names for better headings
+term_label <- c(
+  "postSurge:avg_salinity_5yr" = "Surge with high Salinity",
+  "avg_salinity_5yr" = "5-year avg. Salinity",
+  "postSurge" = "Storm surge",
+   "Lag_Aqua" = "Past Aquaculture (Year-1)",
+  "splag_salinity" = "Salinity in neighboring areas",
+  "splag_surge" = "Surge in neighboring areas"
+  )
+
+plot_df <- coefs_df %>%
+  filter(term %in% names(term_label)) %>%
+  mutate(
+    term_label = term_label[term],
+    term_label = factor(term_label, levels = c(
+      "Surge with high Salinity","Past Aquaculture (Year-1)", 
+      "5-year avg. Salinity", "Salinity in neighboring areas", 
+      "Storm surge", "Surge in neighboring areas" 
+    ))
+  )
+
+# Plot
+# Define color palette for terms
+custom_colors <- c(
+  "postSurge" = "#1f77b4",          # blue
+  "splag_surge" = "#6baed6",        # light blue
+  "avg_salinity_5yr" = "#ff7f0e",   # orange
+  "splag_salinity" = "#fdae6b",     # light orange
+  "Lag_Aqua" = "#08519c",            # dark blue
+  "postSurge:avg_salinity_5yr" = "#d62728"  # red
+)
+
+ggplot(plot_df, aes(x = period, y = estimate, color = term, group = term)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                    ymax = estimate + 1.96 * std.error),
+                width = 0.2, position = position_dodge(width = 0.5)) +
+  labs(y = "Coefficient Estimate", x = "Time Period", color = "Variable") +
+  theme_minimal(base_size = 14) +  # Increase base text size
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_color_manual(values = custom_colors) +
+  facet_wrap(~ term_label, nrow = 3, ncol = 2, scales = "free_y") +
+  theme(
+    strip.text = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  )
+
+
+ggsave("visuals/Temporal_heterogenous_effects.png", width = 10, height = 12, units = "in",dpi=600)
+
+
+
 
 
 
 # Plot estimated effects for each state 
-# Surge effect by state
-# Extract coef and SE from regD1_2 for postSurge effects by State
-coef_regD1_2 <- data.frame(
+# -----------------------------------------
+# # Surge effect by state (without spatial lags)
+# # Extract coef and SE from regD1_2 for postSurge effects by State
+# coef_regD1_2 <- data.frame(
+#   State = c("Baseline (TN)", "AP", "OD"),
+#   Estimate = c(
+#     coef(regD1_2)["postSurge"],
+#     coef(regD1_2)["postSurge"] + coef(regD1_2)["postSurge:StateAP"],
+#     coef(regD1_2)["postSurge"] + coef(regD1_2)["postSurge:StateOD"]
+#   ),
+#   SE = c(
+#     sqrt(vcov(regD1_2)["postSurge", "postSurge"]),
+#     sqrt(vcov(regD1_2)["postSurge", "postSurge"] + 
+#            vcov(regD1_2)["postSurge:StateAP", "postSurge:StateAP"] +
+#            2 * vcov(regD1_2)["postSurge", "postSurge:StateAP"]),
+#     sqrt(vcov(regD1_2)["postSurge", "postSurge"] + 
+#            vcov(regD1_2)["postSurge:StateOD", "postSurge:StateOD"] +
+#            2 * vcov(regD1_2)["postSurge", "postSurge:StateOD"])
+#   )
+# )
+# 
+# coef_regD1_2 <- coef_regD1_2 %>%
+#   mutate(
+#     CI_lower = Estimate - 1.96 * SE,
+#     CI_upper = Estimate + 1.96 * SE
+#   )
+# 
+# ggplot(coef_regD1_2, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
+#   geom_pointrange(color = "blue", size = 1.5) +
+#   geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+#   labs(
+#     title = "Effect of Surge on Aquaculture by States",
+#     y = "Estimated Effect (Coefficient)",
+#     x = "State"
+#   ) +
+#   theme_minimal(base_size = 16)
+# 
+# ggsave("visuals/SurgeEffect_ByState.png", width = 8, height = 6, units = "in",dpi=600)
+# 
+# 
+# 
+# 
+# # Salinity effect by State (without spatial lags)
+# coef_regD1_4 <- data.frame(
+#   State = c("Baseline (TN)", "AP", "OD"),
+#   Estimate = c(
+#     coef(regD1_4)["avg_salinity_5yr"],
+#     coef(regD1_4)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateAP"],
+#     coef(regD1_4)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateOD"]
+#   ),
+#   SE = c(
+#     sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"]),
+#     sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"] + 
+#            vcov(regD1_4)["avg_salinity_5yr:StateAP", "avg_salinity_5yr:StateAP"] +
+#            2 * vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr:StateAP"]),
+#     sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"] + 
+#            vcov(regD1_4)["avg_salinity_5yr:StateOD", "avg_salinity_5yr:StateOD"] +
+#            2 * vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr:StateOD"])
+#   )
+# )
+# 
+# coef_regD1_4 <- coef_regD1_4 %>%
+#   mutate(
+#     CI_lower = Estimate - 1.96 * SE,
+#     CI_upper = Estimate + 1.96 * SE
+#   )
+# 
+# ggplot(coef_regD1_4, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
+#   geom_pointrange(color = "orange", size = 1.5) +
+#   geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+#   labs(
+#     title = "Effect of Past Salinity on Aquaculture by States",
+#     y = "Estimated Effect (Coefficient)",
+#     x = "State"
+#   ) +
+#   theme_minimal(base_size = 16)
+# 
+# ggsave("visuals/SalinityEffect_ByState.png", width = 8, height = 6, units = "in",dpi=600)
+
+
+
+# Marginal effects of salinity and storms by state after controlling for spatial lags
+# Surge effect by state (with spatial lags)
+# Extract coef and SE from regD1_2c_sp for postSurge effects by State
+coef_regD1_2c_sp <- data.frame(
   State = c("Baseline (TN)", "AP", "OD"),
   Estimate = c(
-    coef(regD1_2)["postSurge"],
-    coef(regD1_2)["postSurge"] + coef(regD1_2)["postSurge:StateAP"],
-    coef(regD1_2)["postSurge"] + coef(regD1_2)["postSurge:StateOD"]
+    coef(regD1_2c_sp)["postSurge"],
+    coef(regD1_2c_sp)["postSurge"] + coef(regD1_2)["postSurge:StateAP"],
+    coef(regD1_2c_sp)["postSurge"] + coef(regD1_2)["postSurge:StateOD"]
   ),
   SE = c(
-    sqrt(vcov(regD1_2)["postSurge", "postSurge"]),
-    sqrt(vcov(regD1_2)["postSurge", "postSurge"] + 
-           vcov(regD1_2)["postSurge:StateAP", "postSurge:StateAP"] +
-           2 * vcov(regD1_2)["postSurge", "postSurge:StateAP"]),
-    sqrt(vcov(regD1_2)["postSurge", "postSurge"] + 
-           vcov(regD1_2)["postSurge:StateOD", "postSurge:StateOD"] +
-           2 * vcov(regD1_2)["postSurge", "postSurge:StateOD"])
+    sqrt(vcov(regD1_2c_sp)["postSurge", "postSurge"]),
+    sqrt(vcov(regD1_2c_sp)["postSurge", "postSurge"] + 
+           vcov(regD1_2c_sp)["postSurge:StateAP", "postSurge:StateAP"] +
+           2 * vcov(regD1_2c_sp)["postSurge", "postSurge:StateAP"]),
+    sqrt(vcov(regD1_2c_sp)["postSurge", "postSurge"] + 
+           vcov(regD1_2c_sp)["postSurge:StateOD", "postSurge:StateOD"] +
+           2 * vcov(regD1_2c_sp)["postSurge", "postSurge:StateOD"])
   )
 )
 
-coef_regD1_2 <- coef_regD1_2 %>%
+coef_regD1_2c_sp <- coef_regD1_2c_sp %>%
   mutate(
     CI_lower = Estimate - 1.96 * SE,
     CI_upper = Estimate + 1.96 * SE
   )
 
-ggplot(coef_regD1_2, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
+ggplot(coef_regD1_2c_sp, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
   geom_pointrange(color = "blue", size = 1.5) +
   geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
   labs(
@@ -1468,83 +2301,115 @@ ggplot(coef_regD1_2, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upp
   ) +
   theme_minimal(base_size = 16)
 
-ggsave("visuals/SurgeEffect_ByState.png", width = 8, height = 6, units = "in",dpi=600)
+ggsave("visuals/SurgeEffect_ByState_spatial.png", width = 8, height = 6, units = "in",dpi=600)
 
 
 
 
-# Salinity effect by State 
-coef_regD1_4 <- data.frame(
+# Salinity effect by State (with spatial lags) - regD1_4c_sp
+coef_regD1_4c_sp <- data.frame(
   State = c("Baseline (TN)", "AP", "OD"),
   Estimate = c(
-    coef(regD1_4)["avg_salinity_5yr"],
-    coef(regD1_4)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateAP"],
-    coef(regD1_4)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateOD"]
+    coef(regD1_4c_sp)["avg_salinity_5yr"],
+    coef(regD1_4c_sp)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateAP"],
+    coef(regD1_4c_sp)["avg_salinity_5yr"] + coef(regD1_4)["avg_salinity_5yr:StateOD"]
   ),
   SE = c(
-    sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"]),
-    sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"] + 
-           vcov(regD1_4)["avg_salinity_5yr:StateAP", "avg_salinity_5yr:StateAP"] +
-           2 * vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr:StateAP"]),
-    sqrt(vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr"] + 
-           vcov(regD1_4)["avg_salinity_5yr:StateOD", "avg_salinity_5yr:StateOD"] +
-           2 * vcov(regD1_4)["avg_salinity_5yr", "avg_salinity_5yr:StateOD"])
+    sqrt(vcov(regD1_4c_sp)["avg_salinity_5yr", "avg_salinity_5yr"]),
+    sqrt(vcov(regD1_4c_sp)["avg_salinity_5yr", "avg_salinity_5yr"] + 
+           vcov(regD1_4c_sp)["avg_salinity_5yr:StateAP", "avg_salinity_5yr:StateAP"] +
+           2 * vcov(regD1_4c_sp)["avg_salinity_5yr", "avg_salinity_5yr:StateAP"]),
+    sqrt(vcov(regD1_4c_sp)["avg_salinity_5yr", "avg_salinity_5yr"] + 
+           vcov(regD1_4c_sp)["avg_salinity_5yr:StateOD", "avg_salinity_5yr:StateOD"] +
+           2 * vcov(regD1_4c_sp)["avg_salinity_5yr", "avg_salinity_5yr:StateOD"])
   )
 )
 
-coef_regD1_4 <- coef_regD1_4 %>%
+coef_regD1_4c_sp <- coef_regD1_4c_sp %>%
   mutate(
     CI_lower = Estimate - 1.96 * SE,
     CI_upper = Estimate + 1.96 * SE
   )
 
-ggplot(coef_regD1_4, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
+ggplot(coef_regD1_4c_sp, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
   geom_pointrange(color = "orange", size = 1.5) +
   geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
   labs(
-    title = "Effect of Past Salinity on Aquaculture by States",
+    title = "Effect of Average 5-year Salinity on Aquaculture by States",
     y = "Estimated Effect (Coefficient)",
     x = "State"
   ) +
   theme_minimal(base_size = 16)
 
-ggsave("visuals/SalinityEffect_ByState.png", width = 8, height = 6, units = "in",dpi=600)
+ggsave("visuals/SalinityEffect_ByState_spatial.png", width = 8, height = 6, units = "in",dpi=600)
+
+
+
+# Combined surge and salinity marginal effect 
+# Add "variable" 
+coef_regD1_2c_sp$Variable <- "Surge"
+coef_regD1_4c_sp$Variable <- "Salinity"
+
+combined_coef <- bind_rows(coef_regD1_2c_sp, coef_regD1_4c_sp)
+
+# Replace state codes with full names
+combined_coef$State <- recode(combined_coef$State,
+                              "AP" = "Andhra Pradesh",
+                              "OD" = "Odisha",
+                              "TN" = "Tamil Nadu",
+                              "Baseline (TN)" = "Tamil Nadu"
+)
+
+ggplot(combined_coef, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper, color = Variable)) +
+  geom_pointrange(position = position_dodge(width = 0.5), size = 1.3) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
+  scale_color_manual(values = c("Surge" = "blue", "Salinity" = "orange")) +
+  labs(
+    title = "Effect of Surge and Salinity on Aquaculture by State",
+    y = "Estimated Effect (Coefficient)",
+    x = "State",
+    color = "Variable"
+  ) +
+  theme_minimal(base_size = 16)
+
+ggsave("visuals/Combined_Surge_Salinity_Effect_ByState.png", width = 10, height = 6, dpi = 600)
+
+
 
 
 
 # Feedback Salinity effect by state 
-
-# Construct coefficient table for marginal effects of Lag_Aqua
-coef_regF3_2 <- data.frame(
-  State = c("Baseline (TN)", "AP", "OD"),
+# Construct coefficient table for marginal effects of Lag_Aqua with spatial lags (regF3_2c_sp)
+coef_regF3_2c_sp <- data.frame(
+  State = c("Tamil Nadu", "Andhra Pradesh", "Odisha"), 
   Estimate = c(
-    coef(regF3_2)["Lag_Aqua"],
-    coef(regF3_2)["Lag_Aqua"] + coef(regF3_2)["Lag_Aqua:StateAP"],
-    coef(regF3_2)["Lag_Aqua"] + coef(regF3_2)["Lag_Aqua:StateOD"]
+    coef(regF3_2c_sp)["Lag_Aqua"],
+    coef(regF3_2c_sp)["Lag_Aqua"] + coef(regF3_2c_sp)["Lag_Aqua:StateAP"],
+    coef(regF3_2c_sp)["Lag_Aqua"] + coef(regF3_2c_sp)["Lag_Aqua:StateOD"]
   ),
   SE = c(
-    sqrt(vcov(regF3_2)["Lag_Aqua", "Lag_Aqua"]),
+    sqrt(vcov(regF3_2c_sp)["Lag_Aqua", "Lag_Aqua"]),
     sqrt(
-      vcov(regF3_2)["Lag_Aqua", "Lag_Aqua"] +
-        vcov(regF3_2)["Lag_Aqua:StateAP", "Lag_Aqua:StateAP"] +
-        2 * vcov(regF3_2)["Lag_Aqua", "Lag_Aqua:StateAP"]
+      vcov(regF3_2c_sp)["Lag_Aqua", "Lag_Aqua"] +
+        vcov(regF3_2c_sp)["Lag_Aqua:StateAP", "Lag_Aqua:StateAP"] +
+        2 * vcov(regF3_2c_sp)["Lag_Aqua", "Lag_Aqua:StateAP"]
     ),
     sqrt(
-      vcov(regF3_2)["Lag_Aqua", "Lag_Aqua"] +
-        vcov(regF3_2)["Lag_Aqua:StateOD", "Lag_Aqua:StateOD"] +
-        2 * vcov(regF3_2)["Lag_Aqua", "Lag_Aqua:StateOD"]
+      vcov(regF3_2c_sp)["Lag_Aqua", "Lag_Aqua"] +
+        vcov(regF3_2c_sp)["Lag_Aqua:StateOD", "Lag_Aqua:StateOD"] +
+        2 * vcov(regF3_2c_sp)["Lag_Aqua", "Lag_Aqua:StateOD"]
     )
   )
 )
 
-coef_regF3_2 <- coef_regF3_2 %>%
+coef_regF3_2c_sp <- coef_regF3_2c_sp %>%
   mutate(
     CI_lower = Estimate - 1.96 * SE,
     CI_upper = Estimate + 1.96 * SE
   )
 
 # Plot
-ggplot(coef_regF3_2, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
+ggplot(coef_regF3_2c_sp, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upper)) +
   geom_pointrange(color = "firebrick", size = 1.5) +
   geom_hline(yintercept = 0, linetype = "dashed", size = 1) +
   labs(
@@ -1554,6 +2419,5 @@ ggplot(coef_regF3_2, aes(x = State, y = Estimate, ymin = CI_lower, ymax = CI_upp
   ) +
   theme_minimal(base_size = 16)
 
-ggsave("visuals/FeedbackSalinity_ByState.png", width = 8, height = 6, units = "in",dpi=600)
-
+ggsave("visuals/FeedbackSalinity_ByState_spatial.png", width = 8, height = 6, units = "in",dpi=600)
 

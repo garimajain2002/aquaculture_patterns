@@ -101,7 +101,6 @@ compute_moran_over_time <- function(village_data, lw, region) {
         out$moran_I[out$year == yr] <- moran_test$estimate[["Moran I statistic"]]
         out$p_value[out$year == yr] <- moran_test$p.value
         
-        # Simulated confidence band placeholder (±0.02)
         out$lower[out$year == yr] <- out$moran_I[out$year == yr] - 0.02
         out$upper[out$year == yr] <- out$moran_I[out$year == yr] + 0.02
       }
@@ -118,11 +117,32 @@ compute_moran_over_time <- function(village_data, lw, region) {
   return(out)
 }
 
-moran_all <- compute_moran_over_time(village_all, lw_all, "India")
-moran_ap  <- compute_moran_over_time(village_AP,  lw_AP,  "AP")
-moran_tn  <- compute_moran_over_time(village_TN,  lw_TN,  "TN")
-moran_od  <- compute_moran_over_time(village_OD,  lw_OD,  "OD")
+# Buld listw for each state 
+build_weights <- function(villages_sf, dmax = 5000) {
+  coords <- st_coordinates(st_centroid(villages_sf))
+  nb <- dnearneigh(coords, d1 = 0, d2 = dmax)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  return(lw)
+}
 
+# -------- Build weights and compute Moran’s I for each region --------
+# ALL INDIA
+lw_all <- build_weights(village_all)
+moran_all <- compute_moran_over_time(village_all, lw_all, "India")
+
+# AP
+lw_AP <- build_weights(village_AP)
+moran_ap <- compute_moran_over_time(village_AP, lw_AP, "AP")
+
+# TN
+lw_TN <- build_weights(village_TN)
+moran_tn <- compute_moran_over_time(village_TN, lw_TN, "TN")
+
+# OD
+lw_OD <- build_weights(village_OD)
+moran_od <- compute_moran_over_time(village_OD, lw_OD, "OD")
+
+# -------- Combine all results --------
 moran_all_states <- bind_rows(moran_all, moran_ap, moran_tn, moran_od)
 
 
@@ -138,7 +158,10 @@ ggplot(moran_all_states, aes(x = year, y = moran_I, color = State, linetype = St
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = State), alpha = 0.2, color = NA) +
   
   # Lines
-  geom_line(size = 1) +
+  geom_line(
+    data = subset(moran_all_states, !is.na(moran_I)),
+    aes(group = State), size = 1
+  ) +
   
   # Points for significance
   geom_point(
@@ -164,10 +187,18 @@ ggplot(moran_all_states, aes(x = year, y = moran_I, color = State, linetype = St
     color = "Region", linetype = "Region", fill = "Region", shape = "Significance"
   ) +
   theme_minimal() +
-  theme(legend.position = "bottom")
-
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14)
+  )
 
 ggsave("outputs/MoransI/MoransI_All.png", width = 12, height = 8, units = "in", dpi = 300)
+
 
 
 # 8. Moran scatterplot for a specific year (e.g., 2025) - first account for NA
