@@ -1,6 +1,0 @@
-[2025-03-13 23:40:42][AP_1_2017] Processing started 
-[2025-03-13 23:40:42][AP_1_2017] Reading input data 
-[2025-03-13 23:40:42][AP_1_2017] Preparing landsat data 
-[2025-03-13 23:40:53][AP_1_2017] Calculating indices 
-[2025-03-13 23:40:57][AP_1_2017] Applying salinity model 
-[2025-03-13 23:55:41][AP_1_2017] Error: cannot allocate vector of size 56.5 Mb 

@@ -1,6 +1,0 @@
-Processing started at 2025-03-17 19:50:43 
-
- Processing complete!
-Successfully processed 351 out of 351 combinations (100.0%) 
-Processing finished at 2025-03-17 21:17:14 
-Created summary file with all results: outputs/all_districts_aquaculture_summary.csv

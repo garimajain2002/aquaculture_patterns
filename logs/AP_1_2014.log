@@ -1,6 +1,0 @@
-[2025-03-13 23:40:40][AP_1_2014] Processing started 
-[2025-03-13 23:40:40][AP_1_2014] Reading input data 
-[2025-03-13 23:40:40][AP_1_2014] Preparing landsat data 
-[2025-03-13 23:40:53][AP_1_2014] Calculating indices 
-[2025-03-13 23:40:56][AP_1_2014] Applying salinity model 
-[2025-03-13 23:52:51][AP_1_2014] Error: error in evaluating the argument 'x' in selecting a method for function 'as.data.frame': 'R_Calloc' could not allocate memory (7407097 of 16 bytes) 

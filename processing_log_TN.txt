@@ -1,3 +1,0 @@
-Processing started at 2025-04-10 15:11:10 
-Processed AP_7_1990: FAILED
-Processed AP_7_1991: SUCCESS
